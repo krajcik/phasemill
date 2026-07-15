@@ -1,5 +1,25 @@
 # Changelog
 
+## Phasemill v1.2.0 - 2026-07-15
+
+### Fixed
+
+- preserve Pi provider, model, upstream `errorMessage`, and a bounded stderr
+  tail when required external review fails, instead of reporting only a
+  context-free `stopReason='error'`
+- run Pi with an isolated temporary config directory and pass only the stored
+  ZAI API key through the child environment, avoiding sandbox-denied writes to
+  `~/.pi/agent` during autonomous `codex exec` runs
+- make the phase-controller CLI reject a missing `record` payload within one
+  second and accept long or multiline results through `--result-file`, avoiding
+  indefinite fallback hangs and oversized shell arguments
+
+### New features
+
+- add project-scoped `review.external.data_sharing_approved` consent so an
+  autonomous run can invoke Pi without a repeated workflow confirmation while
+  remaining subject to Codex and tenant policy
+
 ## Phasemill v1.1.0 - 2026-07-15
 
 ### New features

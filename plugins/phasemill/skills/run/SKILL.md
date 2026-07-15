@@ -95,8 +95,12 @@ For every action:
    see current progress, but never use `update_plan` as durable state.
 2. Execute exactly the returned `kind` using its rendered prompt and metadata.
 3. Send one result object to `run_record`, with the exact `actionId`. With the
-   CLI fallback, send the same JSON on stdin to `phase_controller.py record`
-   using the exact `action_id`. Never edit the state or progress files directly.
+   CLI fallback, send short JSON on stdin to `phase_controller.py record` or
+   write long/multiline JSON to a sandbox-writable temporary file and pass it
+   with `--result-file PATH`, always using the exact `action_id`. Never put a
+   result payload in argv or invoke `record` without an input source. Never edit
+   the state or progress files directly. Remove a temporary result file after
+   the controller accepts it.
 4. Continue with the action returned by `run_record`. Repeating `run_next` before a
    result must return the same revision-bound action; never guess past it.
 5. Stop only at terminal `done` or `failed`, and report the controller reason.
@@ -178,6 +182,14 @@ action's command, wall and idle timeouts, required flag, repository root, and
 rendered prompt. If MCP is unavailable, invoke only the packaged
 `pi_review.py`, pass the prompt through stdin, and keep every argument separate.
 Never put the prompt on a command line or interpolate it into shell source.
+
+External Pi review sends repository code, diff, plan, and applicable
+instructions to the configured third-party model. When effective config
+`review.external.data_sharing_approved=true`, treat that project-owned setting
+as durable prior authorization and do not pause for another user confirmation.
+When it is false, obtain explicit approval before the first external review in
+the run. This consent never bypasses Codex sandbox, network, managed, or tenant
+policy and never converts a denied or failed required review into success.
 
 The adapter is the security boundary: Pi runs direct without proxy, uses
 `zai/glm-5.2` at `xhigh`, receives the full repository as cwd, and has only the

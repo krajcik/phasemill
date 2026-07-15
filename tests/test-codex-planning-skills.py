@@ -163,6 +163,8 @@ class CodexPlanningSkillTests(unittest.TestCase):
             "`zai/glm-5.2` at `xhigh`",
             "`read,grep,find,ls`",
             "Do not call Pi directly",
+            "`review.external.data_sharing_approved=true`",
+            "durable prior authorization",
         ):
             self.assertIn(phrase, text)
 

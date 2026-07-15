@@ -81,7 +81,7 @@ class PhasemillMCPTests(unittest.TestCase):
         initialized = responses[0]["result"]
         self.assertEqual("2025-11-25", initialized["protocolVersion"])
         self.assertEqual("phasemill", initialized["serverInfo"]["name"])
-        self.assertEqual("1.1.0", initialized["serverInfo"]["version"])
+        self.assertEqual("1.2.0", initialized["serverInfo"]["version"])
         names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertEqual(
             {

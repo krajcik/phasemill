@@ -30,6 +30,7 @@ command = ["pi"]
 model = "zai/glm-5.2"
 thinking = "xhigh"
 direct = true
+data_sharing_approved = false
 timeout_seconds = 900
 idle_timeout_seconds = 120
 

@@ -14,6 +14,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import select
 import sys
 from types import ModuleType
 from typing import Any, Mapping, Sequence
@@ -22,6 +23,7 @@ from typing import Any, Mapping, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLACEHOLDER = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
 RESULT_OUTCOMES = frozenset({"completed", "clean", "findings", "failed", "timed-out", "skipped"})
+RECORD_STDIN_TIMEOUT_SECONDS = 1.0
 
 
 def _load_sibling(module_name: str, filename: str) -> ModuleType:
@@ -609,6 +611,33 @@ def _controller(args: argparse.Namespace) -> PhaseController:
     return PhaseController(store, _load_effective(args), default_branch=args.default_branch)
 
 
+def _load_record_input(args: argparse.Namespace) -> dict[str, Any]:
+    if args.result_file is not None:
+        raw = args.result_file.read_text(encoding="utf-8")
+    else:
+        if sys.stdin.isatty():
+            raise PhaseControllerError(
+                "record input is required; pipe a JSON object on stdin or use --result-file PATH"
+            )
+        try:
+            ready, _, _ = select.select([sys.stdin], [], [], RECORD_STDIN_TIMEOUT_SECONDS)
+        except (OSError, ValueError):  # pragma: no cover - non-POSIX stdin fallback
+            ready = [sys.stdin]
+        if not ready:
+            raise PhaseControllerError(
+                "record input was not received within 1s; pipe JSON on stdin or use --result-file PATH"
+            )
+        raw = sys.stdin.read()
+    if not raw.strip():
+        raise PhaseControllerError(
+            "record input is empty; pipe a JSON object on stdin or use --result-file PATH"
+        )
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise PhaseControllerError("record input must be a JSON object")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=Path.cwd())
@@ -623,6 +652,11 @@ def main() -> int:
     record = subparsers.add_parser("record")
     record.add_argument("plan", type=Path)
     record.add_argument("--action-id", required=True)
+    record.add_argument(
+        "--result-file",
+        type=Path,
+        help="read the result JSON object from this file instead of stdin",
+    )
     args = parser.parse_args()
 
     try:
@@ -637,9 +671,7 @@ def main() -> int:
             elif args.command == "next":
                 action = controller.next_action()
             else:
-                value = json.load(sys.stdin)
-                if not isinstance(value, dict):
-                    raise PhaseControllerError("record input must be a JSON object")
+                value = _load_record_input(args)
                 action = controller.record_result(args.action_id, PhaseResult.from_mapping(value))
             payload = _action_payload(action)
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))

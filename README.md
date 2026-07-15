@@ -12,11 +12,11 @@ processes and does not widen Codex permissions.
 ## Install
 
 ```bash
-codex plugin marketplace add krajcik/phasemill --ref v1.1.0
+codex plugin marketplace add krajcik/phasemill --ref v1.2.0
 codex plugin add phasemill@phasemill
 ```
 
-For local development, replace `krajcik/phasemill --ref v1.1.0` with the
+For local development, replace `krajcik/phasemill --ref v1.2.0` with the
 absolute path to a checkout. Codex uses its installed plugin cache at runtime.
 
 ## Core workflow
@@ -71,6 +71,17 @@ commits learning updates implicitly.
   never become the durable source of truth.
 - `engine/pi_review.py` runs optional independent review through Pi with
   `zai/glm-5.2`, `xhigh`, direct networking, and read-only repository tools.
+  It imports only the stored ZAI API key into an isolated temporary Pi config
+  directory, so non-interactive Codex sandboxes do not need write access to
+  `~/.pi/agent` and personal Pi settings or extensions are not loaded.
+  Failed reviews retain bounded provider diagnostics without exposing proxy
+  values or silently treating the review as skipped.
+  Projects may set `review.external.data_sharing_approved = true` to persist
+  consent for sending review context to Pi without a repeated workflow prompt;
+  Codex sandbox and managed policy still take precedence.
+- `engine/phase_controller.py record` accepts result JSON through stdin or
+  `--result-file PATH`; missing stdin fails within one second so a malformed CLI
+  fallback cannot stall an autonomous run indefinitely.
 
 The state machine never implies commit, push, release, deploy, worktree
 creation, or worktree removal. Those mutations retain their explicit approval

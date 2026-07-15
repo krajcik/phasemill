@@ -10,7 +10,7 @@
 ## Install from GitHub
 
 ```bash
-codex plugin marketplace add krajcik/phasemill --ref v1.1.0
+codex plugin marketplace add krajcik/phasemill --ref v1.2.0
 codex plugin add phasemill@phasemill
 ```
 
@@ -18,7 +18,7 @@ Restart Codex after installation if the current session does not discover the
 new skills, hooks, or MCP server.
 
 For local development, clone the repository and replace
-`krajcik/phasemill --ref v1.1.0` with the absolute path to the checkout.
+`krajcik/phasemill --ref v1.2.0` with the absolute path to the checkout.
 
 ## Verify
 

@@ -36,7 +36,7 @@ Path(os.environ["FAKE_PI_ENV"]).write_text(json.dumps({
     key: os.environ.get(key) for key in (
         "ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
         "all_proxy", "http_proxy", "https_proxy", "no_proxy",
-        "PI_SKIP_VERSION_CHECK"
+        "PI_SKIP_VERSION_CHECK", "PI_CODING_AGENT_DIR", "ZAI_API_KEY"
     )
 }))
 
@@ -48,6 +48,7 @@ if mode == "timeout":
 elif mode == "malformed":
     print("not-json", flush=True)
 elif mode == "nonzero":
+    print("provider connection failed", file=sys.stderr)
     raise SystemExit(7)
 elif mode == "stream":
     emit({"type": "agent_start"})
@@ -113,6 +114,12 @@ class PiReviewTests(unittest.TestCase):
         self.args_file = self.root / "args.json"
         self.prompt_file = self.root / "prompt.txt"
         self.env_file = self.root / "env.json"
+        self.source_agent_dir = self.root / "source-pi-agent"
+        self.source_agent_dir.mkdir()
+        (self.source_agent_dir / "auth.json").write_text(
+            json.dumps({"zai": {"type": "api_key", "key": "test-zai-key"}}),
+            encoding="utf-8",
+        )
         self.env = mock.patch.dict(
             os.environ,
             {
@@ -120,6 +127,8 @@ class PiReviewTests(unittest.TestCase):
                 "FAKE_PI_PROMPT": str(self.prompt_file),
                 "FAKE_PI_ENV": str(self.env_file),
                 "FAKE_PI_MODE": "ok",
+                "PI_CODING_AGENT_DIR": str(self.source_agent_dir),
+                "ZAI_API_KEY": "",
             },
         )
         self.env.start()
@@ -160,6 +169,23 @@ class PiReviewTests(unittest.TestCase):
         for key in PI_REVIEW.PROXY_ENV_KEYS:
             self.assertEqual("", child_env[key])
         self.assertEqual("1", child_env["PI_SKIP_VERSION_CHECK"])
+
+    def test_subprocess_uses_isolated_temporary_agent_dir_and_zai_credential(self) -> None:
+        result = self.run_adapter()
+        self.assertEqual("ok", result.status)
+        child_env = json.loads(self.env_file.read_text(encoding="utf-8"))
+        runtime_agent_dir = Path(child_env["PI_CODING_AGENT_DIR"])
+        self.assertNotEqual(self.source_agent_dir, runtime_agent_dir)
+        self.assertEqual("test-zai-key", child_env["ZAI_API_KEY"])
+        self.assertFalse(runtime_agent_dir.exists())
+        self.assertNotIn("test-zai-key", self.args_file.read_text(encoding="utf-8"))
+
+    def test_malformed_auth_does_not_break_adapter_startup(self) -> None:
+        (self.source_agent_dir / "auth.json").write_text("not-json", encoding="utf-8")
+        result = self.run_adapter()
+        self.assertEqual("ok", result.status)
+        child_env = json.loads(self.env_file.read_text(encoding="utf-8"))
+        self.assertEqual("", child_env["ZAI_API_KEY"])
 
     def test_prompt_is_passed_through_stdin_and_model_is_reported(self) -> None:
         result = self.run_adapter()
@@ -228,13 +254,17 @@ class PiReviewTests(unittest.TestCase):
         os.environ["FAKE_PI_MODE"] = "nonzero"
         result = self.run_adapter(required=True)
         self.assertEqual("error", result.status)
-        self.assertEqual("Pi exited with code 7", result.reason)
+        self.assertIn("Pi exited with code 7", result.reason)
+        self.assertIn("provider connection failed", result.reason)
 
     def test_model_error_is_rejected_even_when_process_exits_zero(self) -> None:
         os.environ["FAKE_PI_MODE"] = "model-error"
         result = self.run_adapter(required=True)
         self.assertEqual("error", result.status)
         self.assertIn("stopReason", result.reason)
+        self.assertIn("boom", result.reason)
+        self.assertEqual("zai", result.provider)
+        self.assertEqual("glm-5.2", result.model)
 
     def test_empty_review_is_rejected(self) -> None:
         os.environ["FAKE_PI_MODE"] = "empty"

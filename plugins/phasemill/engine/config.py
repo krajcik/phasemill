@@ -140,6 +140,7 @@ SCHEMA: dict[str, Any] = {
             "model": FieldSpec("str", fixed="zai/glm-5.2", has_fixed=True),
             "thinking": FieldSpec("str", fixed="xhigh", has_fixed=True),
             "direct": FieldSpec("bool", fixed=True, has_fixed=True),
+            "data_sharing_approved": FieldSpec("bool"),
             "timeout_seconds": FieldSpec("int", 1, 86_400),
             "idle_timeout_seconds": FieldSpec("int", 1, 86_400),
         },

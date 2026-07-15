@@ -273,6 +273,16 @@ class PlanningConfigTests(unittest.TestCase):
         self.assertEqual(1, config.values["execution"]["task_retries"])
         self.assertEqual(900, config.values["review"]["external"]["timeout_seconds"])
         self.assertEqual(120, config.values["review"]["external"]["idle_timeout_seconds"])
+        self.assertFalse(config.values["review"]["external"]["data_sharing_approved"])
+
+    def test_project_can_persist_external_review_data_sharing_consent(self) -> None:
+        self.write(
+            self.custom / "config.toml",
+            "[review.external]\ndata_sharing_approved = true\n",
+        )
+        config = self.load()
+        self.assertTrue(config.values["review"]["external"]["data_sharing_approved"])
+        self.assertIn("project:", config.origins["review.external.data_sharing_approved"])
         self.assertTrue(config.values["learning"]["auto_propose"])
         self.assertEqual("embedded", config.prompts["learning"].source)
 

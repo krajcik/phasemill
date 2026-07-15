@@ -10,6 +10,7 @@ import queue
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -169,7 +170,7 @@ def failure(required: bool, reason: str, **diagnostics: Any) -> PiReviewResult:
 
 
 def _diagnostics(stream: PiEventStream, elapsed_seconds: float) -> dict[str, Any]:
-    return {
+    diagnostics: dict[str, Any] = {
         "elapsed_seconds": round(elapsed_seconds, 3),
         "turn_count": stream.turn_count,
         "tool_call_count": stream.tool_call_count,
@@ -177,14 +178,45 @@ def _diagnostics(stream: PiEventStream, elapsed_seconds: float) -> dict[str, Any
         "last_event": stream.last_event,
         "partial_review": stream.partial_review,
     }
+    if stream.final_message is not None:
+        provider = stream.final_message.get("provider")
+        model = stream.final_message.get("model")
+        diagnostics["provider"] = provider if isinstance(provider, str) else ""
+        diagnostics["model"] = model if isinstance(model, str) else ""
+    return diagnostics
 
 
-def direct_environment() -> dict[str, str]:
+def _configured_pi_agent_dir(env: dict[str, str]) -> Path:
+    configured = env.get("PI_CODING_AGENT_DIR")
+    return Path(configured).expanduser() if configured else Path.home() / ".pi" / "agent"
+
+
+def _load_zai_api_key(agent_dir: Path) -> str:
+    try:
+        credentials = json.loads((agent_dir / "auth.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    credential = credentials.get("zai") if isinstance(credentials, dict) else None
+    if not isinstance(credential, dict) or credential.get("type") != "api_key":
+        return ""
+    key = credential.get("key")
+    return key if isinstance(key, str) and key else ""
+
+
+def direct_environment(runtime_agent_dir: Path) -> dict[str, str]:
     env = os.environ.copy()
+    source_agent_dir = _configured_pi_agent_dir(env)
     # Empty values force a direct connection and prevent Pi's global httpProxy
     # setting from filling HTTP_PROXY/HTTPS_PROXY via nullish assignment.
     for key in PROXY_ENV_KEYS:
         env[key] = ""
+    if not env.get("ZAI_API_KEY"):
+        if key := _load_zai_api_key(source_agent_dir):
+            env["ZAI_API_KEY"] = key
+    # Pi writes settings locks even in non-interactive, no-session mode. Keep
+    # those runtime writes inside the sandbox-writable temporary directory and
+    # do not expose personal Pi extensions, skills, or settings to the review.
+    env["PI_CODING_AGENT_DIR"] = str(runtime_agent_dir)
     env["PI_SKIP_VERSION_CHECK"] = "1"
     return env
 
@@ -205,9 +237,22 @@ def _read_lines(pipe: TextIO, output: queue.Queue[tuple[str, str]]) -> None:
         output.put(("eof", ""))
 
 
-def _drain_stderr(pipe: TextIO) -> None:
-    for _line in pipe:
-        pass
+def _drain_stderr(pipe: TextIO, stderr_tail: list[str]) -> None:
+    for line in pipe:
+        if stripped := line.strip():
+            stderr_tail.append(stripped)
+            del stderr_tail[:-20]
+
+
+def _with_error_detail(reason: str, stream: PiEventStream, stderr_tail: Sequence[str]) -> str:
+    details: list[str] = []
+    if stream.final_message is not None:
+        error_message = stream.final_message.get("errorMessage")
+        if isinstance(error_message, str) and error_message.strip():
+            details.append(error_message.strip())
+    if stderr_tail:
+        details.append("stderr: " + " | ".join(stderr_tail)[-2000:])
+    return reason if not details else f"{reason}: {'; '.join(details)}"
 
 
 def _stop_process(process: subprocess.Popen[str]) -> None:
@@ -284,77 +329,89 @@ def run_pi_review(
         return failure(required, str(exc))
 
     started = time.monotonic()
-    try:
-        process = subprocess.Popen(
-            argv,
-            cwd=cwd,
-            env=direct_environment(),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            start_new_session=os.name == "posix",
-        )
-    except FileNotFoundError:
-        return failure(required, f"Pi executable not found: {command[0]}")
-    except OSError as exc:
-        return failure(required, f"failed to start Pi: {exc.strerror or exc.__class__.__name__}")
-
-    assert process.stdin is not None
-    assert process.stdout is not None
-    assert process.stderr is not None
-    events: queue.Queue[tuple[str, str]] = queue.Queue()
-    stdout_thread = threading.Thread(target=_read_lines, args=(process.stdout, events), daemon=True)
-    stderr_thread = threading.Thread(target=_drain_stderr, args=(process.stderr,), daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
-    try:
-        process.stdin.write(prompt)
-        process.stdin.close()
-    except (BrokenPipeError, OSError):
-        pass
-
-    stream = PiEventStream()
-    last_event_at = started
-    stdout_eof = False
-    while not (stdout_eof and process.poll() is not None):
-        now = time.monotonic()
-        elapsed = now - started
-        if elapsed >= timeout_seconds:
-            _stop_process(process)
-            _close_process_pipes(process, (stdout_thread, stderr_thread))
-            return _timeout_result(required, "wall", timeout_seconds, elapsed, stream)
-        idle_elapsed = now - last_event_at
-        if idle_elapsed >= idle_timeout_seconds:
-            _stop_process(process)
-            _close_process_pipes(process, (stdout_thread, stderr_thread))
-            return _timeout_result(required, "idle", idle_timeout_seconds, elapsed, stream)
-
-        wait_for = min(timeout_seconds - elapsed, idle_timeout_seconds - idle_elapsed, 0.1)
+    with tempfile.TemporaryDirectory(prefix="phasemill-pi-") as runtime_agent_dir:
         try:
-            item_type, payload = events.get(timeout=max(wait_for, 0.001))
-        except queue.Empty:
-            continue
-        if item_type == "eof":
-            stdout_eof = True
-            continue
-        if error := stream.feed(payload):
-            _stop_process(process)
-            _close_process_pipes(process, (stdout_thread, stderr_thread))
-            return failure(required, error, **_diagnostics(stream, time.monotonic() - started))
-        if payload.strip():
-            last_event_at = time.monotonic()
+            process = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=direct_environment(Path(runtime_agent_dir)),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                start_new_session=os.name == "posix",
+            )
+        except FileNotFoundError:
+            return failure(required, f"Pi executable not found: {command[0]}")
+        except OSError as exc:
+            return failure(required, f"failed to start Pi: {exc.strerror or exc.__class__.__name__}")
 
-    elapsed = time.monotonic() - started
-    _close_process_pipes(process, (stdout_thread, stderr_thread))
-    if process.returncode != 0:
-        return failure(
-            required,
-            f"Pi exited with code {process.returncode}",
-            **_diagnostics(stream, elapsed),
+        assert process.stdin is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
+        events: queue.Queue[tuple[str, str]] = queue.Queue()
+        stderr_tail: list[str] = []
+        stdout_thread = threading.Thread(target=_read_lines, args=(process.stdout, events), daemon=True)
+        stderr_thread = threading.Thread(
+            target=_drain_stderr, args=(process.stderr, stderr_tail), daemon=True
         )
-    return stream.result(required, elapsed_seconds=elapsed)
+        stdout_thread.start()
+        stderr_thread.start()
+        try:
+            process.stdin.write(prompt)
+            process.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+        stream = PiEventStream()
+        last_event_at = started
+        stdout_eof = False
+        while not (stdout_eof and process.poll() is not None):
+            now = time.monotonic()
+            elapsed = now - started
+            if elapsed >= timeout_seconds:
+                _stop_process(process)
+                _close_process_pipes(process, (stdout_thread, stderr_thread))
+                return _timeout_result(required, "wall", timeout_seconds, elapsed, stream)
+            idle_elapsed = now - last_event_at
+            if idle_elapsed >= idle_timeout_seconds:
+                _stop_process(process)
+                _close_process_pipes(process, (stdout_thread, stderr_thread))
+                return _timeout_result(required, "idle", idle_timeout_seconds, elapsed, stream)
+
+            wait_for = min(timeout_seconds - elapsed, idle_timeout_seconds - idle_elapsed, 0.1)
+            try:
+                item_type, payload = events.get(timeout=max(wait_for, 0.001))
+            except queue.Empty:
+                continue
+            if item_type == "eof":
+                stdout_eof = True
+                continue
+            if error := stream.feed(payload):
+                _stop_process(process)
+                _close_process_pipes(process, (stdout_thread, stderr_thread))
+                return failure(required, error, **_diagnostics(stream, time.monotonic() - started))
+            if payload.strip():
+                last_event_at = time.monotonic()
+
+        elapsed = time.monotonic() - started
+        _close_process_pipes(process, (stdout_thread, stderr_thread))
+        if process.returncode != 0:
+            return failure(
+                required,
+                _with_error_detail(f"Pi exited with code {process.returncode}", stream, stderr_tail),
+                **_diagnostics(stream, elapsed),
+            )
+        result = stream.result(required, elapsed_seconds=elapsed)
+        if result.status == "ok":
+            return result
+        return PiReviewResult(
+            **{
+                **asdict(result),
+                "reason": _with_error_detail(result.reason, stream, stderr_tail),
+            }
+        )
 
 
 def parse_command_json(raw: str) -> list[str]:

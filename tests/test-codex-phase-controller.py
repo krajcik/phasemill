@@ -331,6 +331,66 @@ class PhaseControllerTests(unittest.TestCase):
         self.assertEqual("gpt-5.6-sol", payload["roles"][0]["agent"]["model"])
         self.assertEqual("high", payload["roles"][0]["agent"]["model_reasoning_effort"])
 
+    def test_cli_record_accepts_result_file(self) -> None:
+        controller, action = self.start()
+        self.check("first item")
+        result_file = self.root / "task-result.json"
+        result_file.write_text(
+            json.dumps({"outcome": "completed", "summary": "long learning-style result"}),
+            encoding="utf-8",
+        )
+        run = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--project-root",
+                str(self.root),
+                "--plugin-data",
+                str(self.user),
+                "--default-branch",
+                "main",
+                "record",
+                str(self.plan),
+                "--action-id",
+                action.action_id,
+                "--result-file",
+                str(result_file),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertEqual("task", json.loads(run.stdout)["kind"])
+
+    def test_cli_record_without_input_fails_instead_of_waiting(self) -> None:
+        _, action = self.start()
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--project-root",
+                str(self.root),
+                "--plugin-data",
+                str(self.user),
+                "--default-branch",
+                "main",
+                "record",
+                str(self.plan),
+                "--action-id",
+                action.action_id,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        process.wait(timeout=3)
+        stdout, stderr = process.communicate()
+        self.assertEqual("", stdout)
+        self.assertEqual(2, process.returncode)
+        self.assertIn("record input was not received within 1s", stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
