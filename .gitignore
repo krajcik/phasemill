@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+
+# Codex plugin marketplace metadata is part of the repository.
+!.agents/
+!.agents/plugins/
+!.agents/plugins/marketplace.json
+
+# Phasemill runtime state is repository-local and disposable.
+.phasemill/runs/

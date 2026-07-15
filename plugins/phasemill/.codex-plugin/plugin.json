@@ -1,0 +1,46 @@
+{
+  "name": "phasemill",
+  "version": "1.1.0",
+  "description": "A durable Codex workflow for planning, implementation, review, project learning, and release.",
+  "author": {
+    "name": "Krajcik",
+    "url": "https://github.com/krajcik"
+  },
+  "homepage": "https://github.com/krajcik/phasemill",
+  "repository": "https://github.com/krajcik/phasemill",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "planning",
+    "state-machine",
+    "code-review",
+    "subagents",
+    "workflow"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Phasemill",
+    "shortDescription": "Run durable engineering and proposal-only learning workflows",
+    "longDescription": "Phasemill guides Codex through repository-grounded design, planning, implementation, native subagent review, independent Pi review, proposal-only project learning, and release using a restart-safe state machine.",
+    "developerName": "Krajcik",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/krajcik/phasemill",
+    "privacyPolicyURL": "https://github.com/krajcik/phasemill/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/krajcik/phasemill/blob/main/TERMS.md",
+    "defaultPrompt": [
+      "Design and plan this change before implementation.",
+      "Execute the accepted plan and review the result.",
+      "Resume the active Phasemill run.",
+      "Learn durable project guidance from this run or an explicitly named PR."
+    ],
+    "brandColor": "#8B5CF6",
+    "composerIcon": "./assets/phasemill.svg",
+    "logo": "./assets/phasemill.svg"
+  }
+}

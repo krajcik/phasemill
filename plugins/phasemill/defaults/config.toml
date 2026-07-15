@@ -1,0 +1,105 @@
+# Codex planning defaults.
+# Behavior adapted from umputun/ralphex at
+# c536f66ad2868796ddb0220ab00c19e6b56152a6.
+
+[execution]
+task_retries = 1
+max_task_iterations = 50
+iteration_delay_ms = 2000
+session_timeout = ""
+idle_timeout = ""
+implementer_agent = "implementer"
+cross_module_agent = "cross-module-implementer"
+recovery_agent = "recovery-implementer"
+mechanical_agent = "mechanical"
+
+[review]
+agents = ["implementation", "quality", "testing", "documentation", "simplification"]
+disabled_agents = []
+agent_profiles = { implementation = "review-implementation", quality = "review-quality", testing = "review-testing", documentation = "review-documentation", simplification = "review-simplification" }
+fallback_agent = "reviewer"
+max_parallel_agents = 4
+max_iterations = 3
+max_external_iterations = 0
+patience = 0
+
+[review.external]
+backend = "pi"
+required = false
+command = ["pi"]
+model = "zai/glm-5.2"
+thinking = "xhigh"
+direct = true
+timeout_seconds = 900
+idle_timeout_seconds = 120
+
+[agents.planner]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+
+[agents.implementer]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+
+[agents.cross-module-implementer]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[agents.recovery-implementer]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "xhigh"
+
+[agents.reviewer]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[agents.explorer]
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
+
+[agents.mechanical]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "low"
+
+[agents.review-implementation]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[agents.review-quality]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[agents.review-testing]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[agents.review-documentation]
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
+
+[agents.review-simplification]
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
+
+[agents.terra]
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
+enabled = false
+
+[finalize]
+enabled = false
+
+[learning]
+auto_propose = true
+
+[plans]
+directory = "docs/plans"
+move_on_completion = true
+
+[worktree]
+enabled = false
+
+[profiles]
+auto = true
+enable = []
+disable = []

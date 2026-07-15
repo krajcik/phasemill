@@ -1,0 +1,20 @@
+{
+  "name": "phasemill",
+  "interface": {
+    "displayName": "Phasemill"
+  },
+  "plugins": [
+    {
+      "name": "phasemill",
+      "source": {
+        "source": "local",
+        "path": "./plugins/phasemill"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

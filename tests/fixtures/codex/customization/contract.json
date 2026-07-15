@@ -1,0 +1,92 @@
+{
+  "config_layers_low_to_high": [
+    {
+      "name": "embedded",
+      "values": {
+        "review": {
+          "enabled": true,
+          "agents": ["implementation", "quality"],
+          "max_iterations": 3,
+          "external": {
+            "backend": "pi",
+            "required": false,
+            "timeout_seconds": 900
+          }
+        },
+        "profiles": {
+          "auto": true,
+          "enable": [],
+          "disable": []
+        }
+      }
+    },
+    {
+      "name": "user",
+      "values": {
+        "review": {
+          "max_iterations": 5,
+          "external": {
+            "timeout_seconds": 600
+          }
+        }
+      }
+    },
+    {
+      "name": "project",
+      "values": {
+        "review": {
+          "enabled": false,
+          "agents": []
+        },
+        "profiles": {
+          "enable": ["go"],
+          "disable": ["javascript-typescript"]
+        }
+      }
+    },
+    {
+      "name": "invocation",
+      "values": {
+        "review": {
+          "max_iterations": 0
+        }
+      }
+    }
+  ],
+  "expected_config": {
+    "review": {
+      "enabled": false,
+      "agents": [],
+      "max_iterations": 0,
+      "external": {
+        "backend": "pi",
+        "required": false,
+        "timeout_seconds": 600
+      }
+    },
+    "profiles": {
+      "auto": true,
+      "enable": ["go"],
+      "disable": ["javascript-typescript"]
+    }
+  },
+  "expected_origins": {
+    "review.enabled": "project",
+    "review.agents": "project",
+    "review.max_iterations": "invocation",
+    "review.external.backend": "embedded",
+    "review.external.required": "embedded",
+    "review.external.timeout_seconds": "user",
+    "profiles.auto": "embedded",
+    "profiles.enable": "project",
+    "profiles.disable": "project"
+  },
+  "rule_order_low_to_high": [
+    "embedded",
+    "language-profile",
+    "user",
+    "project",
+    "AGENTS.md",
+    "current-user-request"
+  ]
+}

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate plugin metadata
+        run: python3 scripts/validate-codex-plugins.py
+
+      - name: Compile Python helpers
+        run: |
+          python3 -m py_compile \
+            plugins/phasemill/mcp/server.py \
+            plugins/phasemill/engine/*.py \
+            plugins/phasemill/hooks/*.py \
+            plugins/phasemill/scripts/*.py \
+            plugins/phasemill/skills/git-review/git-review.py
+
+      - name: ShellCheck
+        run: |
+          find plugins tests -name '*.sh' -print0 | xargs -0 shellcheck
+
+      - name: Run Codex contract tests
+        run: |
+          for test_file in tests/test-codex-*.py; do
+            python3 "$test_file" || exit 1
+          done

@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/runtime-context.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking for active Phasemill runs"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/skill-eval.py\"",
+            "timeout": 10,
+            "statusMessage": "Evaluating applicable skills"
+          }
+        ]
+      }
+    ]
+  }
+}

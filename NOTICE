@@ -1,0 +1,26 @@
+Phasemill
+Copyright (c) 2026 Phasemill contributors
+
+This distribution contains original and adapted MIT-licensed work from:
+
+1. umputun/cc-thingz
+   Source: https://github.com/umputun/cc-thingz
+   Pinned commit: dd01fa7f181528b564d86ce2f48c8e47a4b99011
+
+   Skill UX, review and release helpers, advisory hook ideas, and supporting
+   scripts were derived from the donor project and subsequently consolidated
+   into the standalone Codex plugin under plugins/phasemill/.
+
+2. umputun/ralphex
+   Source: https://github.com/umputun/ralphex
+   Pinned commit: c536f66ad2868796ddb0220ab00c19e6b56152a6
+
+   Planning prompts, task and review phases, configuration, retry and
+   convergence policy, progress semantics, and worktree contracts informed the
+   implementation under plugins/phasemill/defaults/ and
+   plugins/phasemill/engine/.
+
+Both donors carry the notice "Copyright (c) 2026 Umputun" and are licensed
+under the MIT License. The repository LICENSE contains the applicable MIT
+terms. Phasemill is an independent Codex project; neither donor is a runtime
+dependency or an indication of endorsement.
