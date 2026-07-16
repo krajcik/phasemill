@@ -185,6 +185,8 @@ case "$command" in
         fi
         mkdir -p "$base"
         created=false
+        # Invoked indirectly by the trap below.
+        # shellcheck disable=SC2317
         cleanup_lazy() {
             if [ "$created" = true ]; then
                 git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true
