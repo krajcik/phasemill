@@ -79,6 +79,7 @@ class CodexWorktreeTests(unittest.TestCase):
         )
 
     def test_lazy_prepare_is_plan_independent_deterministic_and_reusable(self) -> None:
+        self.plan.unlink()
         planned = fields(self.lazy("lazy-plan").stdout)
         self.assertEqual("planned", planned["status"])
         self.assertEqual("phasemill/lazy-abc123", planned["branch"])
@@ -99,6 +100,7 @@ class CodexWorktreeTests(unittest.TestCase):
         self.assertEqual("reused", inspected["status"])
 
     def test_lazy_prepare_rejects_dirty_origin_and_stale_or_divergent_head(self) -> None:
+        self.plan.unlink()
         (self.root / "dirty.txt").write_text("dirty\n", encoding="utf-8")
         dirty = self.lazy("lazy-prepare", check=False)
         self.assertEqual(2, dirty.returncode)
