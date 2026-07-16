@@ -134,6 +134,152 @@ class CodexSkillEvalTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("", result.stdout)
 
+    def test_session_start_labels_waiting_lazy_and_linked_run_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs = root / ".phasemill/runs"
+            lazy = runs / "lazy-journey-active"
+            lazy.mkdir(parents=True)
+            (lazy / "state.json").write_text(
+                json.dumps(
+                    {
+                        "status": "waiting-input",
+                        "journey_id": "journey-active",
+                        "phase": "handoff",
+                        "revision": 7,
+                        "plan_path": "docs/plans/lazy.md",
+                        "linked_run_id": "run-linked",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (runs / "state-linked.json").write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "plan_path": "docs/plans/lazy.md",
+                        "phase": "review",
+                        "revision": 4,
+                        "run_id": "run-linked",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = invoke_runtime(
+                json.dumps({"hook_event_name": "SessionStart", "cwd": str(root)})
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("Lazy journeys:", context)
+            self.assertIn("status=waiting-input", context)
+            self.assertIn("journey=journey-active", context)
+            self.assertIn("linked_run=run-linked", context)
+            self.assertIn("Implementation runs:", context)
+            self.assertIn("run=run-linked", context)
+            self.assertIn("advisory only", context)
+            self.assertIn("never advances or repairs", context)
+
+    def test_session_start_tolerates_corrupted_lazy_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs = root / ".phasemill/runs"
+            corrupt = runs / "lazy-corrupt"
+            valid = runs / "lazy-valid"
+            corrupt.mkdir(parents=True)
+            valid.mkdir(parents=True)
+            (corrupt / "state.json").write_text("{broken", encoding="utf-8")
+            (valid / "state.json").write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "journey_id": "valid",
+                        "phase": "design",
+                        "revision": 1,
+                        "plan_path": "",
+                        "linked_run_id": "",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = invoke_runtime(
+                json.dumps({"hook_event_name": "SessionStart", "cwd": str(root)})
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("journey=valid", context)
+            self.assertNotIn("corrupt", context)
+
+    def test_session_start_with_only_completed_or_corrupt_lazy_state_is_silent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs = root / ".phasemill/runs"
+            completed = runs / "lazy-completed"
+            corrupt = runs / "lazy-corrupt"
+            completed.mkdir(parents=True)
+            corrupt.mkdir(parents=True)
+            (completed / "state.json").write_text(
+                json.dumps({"status": "completed", "journey_id": "done"}),
+                encoding="utf-8",
+            )
+            (corrupt / "state.json").write_text("not json", encoding="utf-8")
+            result = invoke_runtime(
+                json.dumps({"hook_event_name": "SessionStart", "cwd": str(root)})
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stdout)
+
+    def test_session_start_does_not_follow_state_symlinks_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            root = Path(directory)
+            runs = root / ".phasemill/runs"
+            runs.mkdir(parents=True)
+            external = Path(outside) / "state.json"
+            external.write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "journey_id": "outside-secret",
+                        "phase": "design",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            link = runs / "lazy-escape"
+            try:
+                link.symlink_to(Path(outside), target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlinks are unavailable")
+            result = invoke_runtime(
+                json.dumps({"hook_event_name": "SessionStart", "cwd": str(root)})
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stdout)
+            self.assertNotIn("outside-secret", result.stdout)
+
+    def test_session_start_does_not_follow_symlinked_runs_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            root = Path(directory)
+            phasemill = root / ".phasemill"
+            phasemill.mkdir()
+            external_runs = Path(outside) / "runs"
+            lazy = external_runs / "lazy-escape"
+            lazy.mkdir(parents=True)
+            (lazy / "state.json").write_text(
+                json.dumps(
+                    {"status": "running", "journey_id": "outside-secret", "phase": "design"}
+                ),
+                encoding="utf-8",
+            )
+            try:
+                (phasemill / "runs").symlink_to(external_runs, target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlinks are unavailable")
+            result = invoke_runtime(
+                json.dumps({"hook_event_name": "SessionStart", "cwd": str(root)})
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

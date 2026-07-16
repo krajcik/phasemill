@@ -41,6 +41,8 @@ def _load_module(name: str, filename: str) -> ModuleType:
 PLAN_STATE = _load_module("_phasemill_mcp_plan_state", "plan_state.py")
 CONFIG = _load_module("_phasemill_mcp_config", "config.py")
 CONTROLLER = _load_module("_phasemill_mcp_controller", "phase_controller.py")
+LAZY_STATE = _load_module("_phasemill_mcp_lazy_state", "lazy_state.py")
+LAZY_CONTROLLER = _load_module("_phasemill_mcp_lazy_controller", "lazy_controller.py")
 PI_REVIEW = _load_module("_phasemill_mcp_pi_review", "pi_review.py")
 
 
@@ -211,6 +213,67 @@ def run_record(arguments: Mapping[str, Any]) -> dict[str, Any]:
     return asdict(controller.record_result(action_id, result))
 
 
+def _lazy_store(project_root: Path, arguments: Mapping[str, Any]) -> Any:
+    journey_id = _string(arguments, "journeyId", required=False).strip()
+    if journey_id:
+        return LAZY_STATE.LazyStateStore(project_root, journey_id)
+    active = LAZY_STATE.discover_journeys(project_root, active_only=True)
+    if not active:
+        raise ToolError("no active lazy journey; provide journeyId or call lazy_start")
+    if len(active) != 1:
+        raise ToolError("multiple active lazy journeys; provide journeyId")
+    return LAZY_STATE.LazyStateStore(project_root, active[0].journey_id)
+
+
+def _lazy_controller(project_root: Path, arguments: Mapping[str, Any]) -> Any:
+    return LAZY_CONTROLLER.LazyController(
+        _lazy_store(project_root, arguments),
+        _load_effective(project_root, arguments),
+    )
+
+
+def lazy_start(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    project_root = _project_root(arguments)
+    controller, created = LAZY_CONTROLLER.LazyController.start(
+        project_root,
+        _load_effective(project_root, arguments),
+        request_id=_string(arguments, "requestId"),
+        idea=_string(arguments, "idea"),
+    )
+    payload = asdict(controller.next_action())
+    payload["created"] = created
+    return payload
+
+
+def lazy_status(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    project_root = _project_root(arguments)
+    journey_id = _string(arguments, "journeyId", required=False).strip()
+    if journey_id:
+        store = LAZY_STATE.LazyStateStore(project_root, journey_id)
+        return {
+            "state": asdict(store.load()),
+            "paths": {name: str(path) for name, path in asdict(store.paths).items()},
+        }
+    active = LAZY_STATE.discover_journeys(project_root, active_only=True)
+    recent = LAZY_STATE.discover_journeys(project_root, limit=20)
+    return {
+        "active": [asdict(state) for state in active],
+        "recent": [asdict(state) for state in recent],
+    }
+
+
+def lazy_next(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    project_root = _project_root(arguments)
+    return asdict(_lazy_controller(project_root, arguments).next_action())
+
+
+def lazy_record(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    project_root = _project_root(arguments)
+    controller = _lazy_controller(project_root, arguments)
+    result = LAZY_CONTROLLER.LazyResult.from_mapping(_object(arguments.get("result"), "result"))
+    return asdict(controller.record_result(_string(arguments, "actionId"), result))
+
+
 def external_review(arguments: Mapping[str, Any]) -> dict[str, Any]:
     project_root = _project_root(arguments)
     command = _string_list(arguments, "command") or ["pi"]
@@ -218,7 +281,7 @@ def external_review(arguments: Mapping[str, Any]) -> dict[str, Any]:
         _string(arguments, "prompt"),
         cwd=project_root,
         command=command,
-        timeout_seconds=_number(arguments, "timeoutSeconds", 900, minimum=1),
+        timeout_seconds=_number(arguments, "timeoutSeconds", 1200, minimum=1),
         idle_timeout_seconds=_number(arguments, "idleTimeoutSeconds", 120, minimum=1),
         required=_boolean(arguments, "required", False),
     )
@@ -239,6 +302,62 @@ COMMON_RUN_PROPERTIES: dict[str, Any] = {
         "items": {"type": "string"},
         "description": "Temporary config overrides as dotted.path=TOML_VALUE.",
     },
+}
+
+COMMON_LAZY_PROPERTIES: dict[str, Any] = {
+    "projectRoot": COMMON_RUN_PROPERTIES["projectRoot"],
+    "journeyId": {"type": "string", "description": "Lazy journey id; omit only when exactly one is active."},
+    "touchedFiles": COMMON_RUN_PROPERTIES["touchedFiles"],
+    "overrides": COMMON_RUN_PROPERTIES["overrides"],
+}
+
+LAZY_RESULT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "outcome": {
+            "type": "string",
+            "enum": ["completed", "clean", "findings", "needs-input", "answered", "failed", "timed-out"],
+        },
+        "summary": {"type": "string"},
+        "question": {"type": "string"},
+        "options": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+        "gate": {"type": "string"},
+        "answer": {"type": "string"},
+        "decision": {"type": "string", "enum": ["", "continue", "stop"]},
+        "plan_path": {"type": "string"},
+        "plan_digest": {"type": "string"},
+        "previous_plan_digest": {"type": "string"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "location": {"type": "string"},
+                    "evidence": {"type": "string"},
+                    "consequence": {"type": "string"},
+                    "proposed_fix": {"type": "string"},
+                },
+                "required": ["id", "location", "evidence", "consequence", "proposed_fix"],
+                "additionalProperties": False,
+            },
+        },
+        "head": {"type": "string"},
+        "worktree_fingerprint": {"type": "string"},
+        "dirty_paths": {"type": "array", "items": {"type": "string"}},
+        "scope_paths": {"type": "array", "items": {"type": "string"}},
+        "linked_run_id": {"type": "string"},
+        "execution_project_root": {"type": "string"},
+        "execution_plan_path": {"type": "string"},
+        "run_outcome": {"type": "string", "enum": ["", "completed", "failed"]},
+        "approved_main_root": {"type": "string"},
+        "approved_execution_root": {"type": "string"},
+        "approved_branch": {"type": "string"},
+        "approved_plan_path": {"type": "string"},
+        "execution_branch": {"type": "string"},
+    },
+    "required": ["outcome"],
+    "additionalProperties": False,
 }
 
 
@@ -339,6 +458,57 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "lazy_start",
+        "description": "Start or replay an idempotent durable lazy preparation journey.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **COMMON_LAZY_PROPERTIES,
+                "requestId": {"type": "string"},
+                "idea": {"type": "string"},
+            },
+            "required": ["projectRoot", "requestId", "idea"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "lazy_status",
+        "description": "Read one lazy journey or discover active and recent journeys without mutation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                key: COMMON_LAZY_PROPERTIES[key]
+                for key in ("projectRoot", "journeyId")
+            },
+            "required": ["projectRoot"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "lazy_next",
+        "description": "Return the current revision-bound preparation or handoff action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": COMMON_LAZY_PROPERTIES,
+            "required": ["projectRoot"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "lazy_record",
+        "description": "Atomically record one lazy action result and return the next action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **COMMON_LAZY_PROPERTIES,
+                "actionId": {"type": "string"},
+                "result": LAZY_RESULT_SCHEMA,
+            },
+            "required": ["projectRoot", "actionId", "result"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -350,6 +520,10 @@ TOOL_HANDLERS: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
     "run_next": run_next,
     "run_record": run_record,
     "external_review": external_review,
+    "lazy_start": lazy_start,
+    "lazy_status": lazy_status,
+    "lazy_next": lazy_next,
+    "lazy_record": lazy_record,
 }
 
 
@@ -389,7 +563,7 @@ def _dispatch(message: Mapping[str, Any]) -> dict[str, Any] | None:
                 "protocolVersion": protocol,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                "instructions": "Use run_start/run_next/run_record as the durable state-machine boundary. Native Codex subagents execute returned actions.",
+                "instructions": "Use lazy_start/lazy_status/lazy_next/lazy_record for durable idea-to-plan preparation, then run_start/run_status/run_next/run_record for implementation. Status calls never advance state; native Codex subagents execute returned actions.",
             },
         )
     if method == "ping":
@@ -409,6 +583,11 @@ def _dispatch(message: Mapping[str, Any]) -> dict[str, Any] | None:
             PLAN_STATE.PlanStateError,
             CONTROLLER.PLAN_STATE.PlanStateError,
             CONTROLLER.PhaseControllerError,
+            LAZY_STATE.LazyStateError,
+            LAZY_CONTROLLER.LAZY_STATE.LazyStateError,
+            LAZY_CONTROLLER.PLAN_STATE.PlanStateError,
+            LAZY_CONTROLLER.PLANNING_CONFIG.ConfigError,
+            LAZY_CONTROLLER.LazyControllerError,
             CONFIG.ConfigError,
             CONTROLLER.PLANNING_CONFIG.ConfigError,
             OSError,

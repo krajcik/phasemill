@@ -10,7 +10,7 @@
           "external": {
             "backend": "pi",
             "required": false,
-            "timeout_seconds": 900
+            "timeout_seconds": 1200
           }
         },
         "profiles": {

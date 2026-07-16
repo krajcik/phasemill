@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### New features
+
+- add `$lazy` for a durable autonomous journey from an idea through discovery,
+  design, exclusive planning, bounded plan review/fix, normal execution, and
+  proposal-only learning
+- expose typed lazy start, status, next, and record MCP tools with replay-safe
+  waiting and an exact origin-bound handoff to the normal run state machine
+- include lazy journeys and their linked runs in `$status` and advisory runtime
+  context without letting status or hooks advance durable state
+
+### Safety
+
+- preserve accepted dirty-overlap answers in the durable progress log when
+  repository drift forces the input gate to refresh
+- run Pi/GLM review at `high` reasoning and append a fixed 40-tool budget that
+  stops broad exploration after 30 calls and requires a concise final result,
+  while extending the wall timeout from 15 to 20 minutes so nearly complete
+  reviews are not discarded at the previous boundary
+- preserve explicit gates for ambiguity, overlapping work, permissions,
+  worktrees, Pi data sharing, external mutations, commits, publishing,
+  deployment, cleanup, and application of learning proposals
+- extend installed-cache smoke coverage across interrupted lazy preparation,
+  findings/fix, handoff, synthetic run completion, and terminal lazy completion
+  with no model, network, Git, or project-learning mutation
+
 ## Phasemill v1.2.0 - 2026-07-15
 
 ### Fixed

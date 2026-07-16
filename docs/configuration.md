@@ -25,8 +25,9 @@ outside and above plugin configuration.
 └── rules/
 ```
 
-- `config.toml` overrides typed execution, review, finalize, proposal-only
-  learning, worktree, profile, and future native-agent routing settings.
+- `config.toml` overrides typed lazy preparation, execution, review, finalize,
+  proposal-only learning, worktree, profile, and future native-agent routing
+  settings.
 - `prompts/<name>.md` replaces a complete embedded phase prompt.
 - `agents/<role>.md` replaces or adds a complete review-role prompt.
 - `profiles/<language>.md` adds project-specific language guidance.
@@ -67,6 +68,31 @@ Project roles can be added under `agents/` and mapped in `config.toml`. Disable
 irrelevant roles explicitly; do not weaken correctness checks by hiding them in
 an unrelated role.
 
+## Lazy mode
+
+Lazy mode has a deliberately small configuration surface:
+
+```toml
+[lazy]
+max_plan_review_iterations = 2
+plan_review_agents = ["implementation", "quality", "testing"]
+```
+
+Every configured lazy plan-review role must exist in `agents`, have a
+`review.agent_profiles` mapping, and remain enabled; an empty effective list is
+an error. The existing `review.max_parallel_agents` limit controls batching.
+
+Embedded `lazy-discovery`, `lazy-design`, `lazy-plan`, `lazy-plan-review`, and
+`lazy-plan-fix` prompts can be replaced through `prompts/`. The lazy plan prompt
+composes the normal make-plan contract and overrides only its interactive
+acceptance gate, producing an exclusive plan that can be handed directly to the
+run state machine.
+
+Lazy mode honors the existing external-review consent and timeout, finalize,
+proposal-only learning, plan-move, retry, and worktree settings. None of these
+settings authorizes commit, push, release, publish, deploy, worktree cleanup, or
+application of a learning proposal.
+
 ## Runtime profiles
 
 Agent model and reasoning entries are validated routing hints. Current native
@@ -88,16 +114,18 @@ backend = "pi"
 required = false
 command = ["pi"]
 model = "zai/glm-5.2"
-thinking = "xhigh"
+thinking = "high"
 direct = true
-timeout_seconds = 900
+timeout_seconds = 1200
 idle_timeout_seconds = 120
 ```
 
 Pi receives the full repository as its working directory but only read-only
 `read`, `grep`, `find`, and `ls` tools. The adapter removes proxy variables,
 streams JSON events, separates idle and wall-clock timeouts, and returns partial
-diagnostics on failure. Set `backend = "none"` to disable it.
+diagnostics. It also appends a fixed 40-tool review budget: broad exploration
+must stop after 30 calls and a final review is required by call 40.
+Set `backend = "none"` to disable it.
 
 ## Automatic learning
 
@@ -132,9 +160,11 @@ and project fragments keep higher precedence.
 
 ## State and worktrees
 
-Durable run state lives under `.phasemill/runs/`, not under the protected Codex
-configuration tree. It must be Git-ignored and must never enter implementation
-fingerprints, reviews, commits, or releases.
+Durable state lives under `.phasemill/runs/`, not under the protected Codex
+configuration tree. Existing implementation runs keep their flat run
+directories; lazy preparation journeys use a nested namespace and link to the
+normal run created at handoff. All runtime state must be Git-ignored and must
+never enter fingerprints, reviews, commits, or releases.
 
 Worktree mode is off by default. Preparation first returns deterministic paths
 without mutation, then requires explicit approval before creation. Removal is a

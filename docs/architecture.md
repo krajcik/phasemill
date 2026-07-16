@@ -7,8 +7,8 @@ structured result.
 
 ```text
 user intent
-  -> focused skill
-  -> Phasemill MCP (config + durable transition)
+  -> focused skill or $lazy
+  -> Phasemill MCP (config + durable preparation/run transition)
   -> native Codex action (task/review/finalize/learning)
   -> one structured result
   -> next durable transition
@@ -19,8 +19,8 @@ user intent
 - Skills provide intent routing, repository context, mutation gates, and
   action-specific instructions.
 - The dependency-free stdio MCP server exposes `plan_inspect`,
-  `config_resolve`, `run_start`, `run_status`, `run_next`, `run_record`, and
-  `external_review`.
+  `config_resolve`, `lazy_start`, `lazy_status`, `lazy_next`, `lazy_record`,
+  `run_start`, `run_status`, `run_next`, `run_record`, and `external_review`.
 - The engine validates layered configuration, parses plans, persists run state,
   applies retry and convergence policy, and wraps Pi.
 - Native Codex subagents implement tasks and perform bounded read-only reviews.
@@ -40,10 +40,29 @@ The normal flow is:
 task -> first review -> convergence review -> optional Pi review -> finalize -> learning -> done
 ```
 
+The lazy preparation flow is:
+
+```text
+discovery -> design -> exclusive plan -> bounded plan review/fix -> exact run handoff
+```
+
+Lazy actions use the same revision-bound replay contract. Waiting for user
+input preserves the current phase, and the handoff records the exact origin,
+project root, plan digest, and approved worktree context before linking one
+normal run. Restarting across that boundary reuses the matching run instead of
+starting a second one.
+
 Retries, review iterations, optional external review, finalization, and
 automatic learning proposals are config-driven. The engine never edits
 implementation or project-scope files and never treats ephemeral Codex
 `update_plan` state as durable truth.
+
+Lazy mode changes the acceptance gate for its generated plan only. Existing
+external-review consent, retry, finalize, learning, plan-move, and worktree
+settings remain authoritative. Ambiguity, overlapping active work, permission
+changes, external mutations, and exhausted policy limits pause the journey;
+commit, push, release, publish, deploy, worktree cleanup, and learning writes
+always retain their explicit gates.
 
 The `learning` action runs in the root Codex task because it needs the user's
 current corrective comments. It may inspect only the current run and one
@@ -66,8 +85,9 @@ versions and returns tool failures as structured `isError` results while
 malformed requests and unknown methods use JSON-RPC errors.
 
 All project roots must be absolute. Plan and state paths are resolved within
-that root so callers cannot escape into sibling repositories. The transport has
-no third-party Python dependencies and performs no network discovery.
+that root so callers cannot escape into sibling repositories, except for an
+already approved worktree bound to the same lazy journey. The transport has no
+third-party Python dependencies and performs no network discovery.
 
 ## Native execution boundary
 

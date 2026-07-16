@@ -58,7 +58,20 @@ RULE_KINDS = (
     "writing-style",
 )
 REQUIRED_PROMPTS = frozenset(
-    {"make-plan", "task", "review-first", "review-second", "finalize", "pi-review", "learning"}
+    {
+        "make-plan",
+        "task",
+        "review-first",
+        "review-second",
+        "finalize",
+        "pi-review",
+        "learning",
+        "lazy-discovery",
+        "lazy-design",
+        "lazy-plan",
+        "lazy-plan-review",
+        "lazy-plan-fix",
+    }
 )
 REQUIRED_AGENTS = frozenset({"implementation", "quality", "testing", "documentation", "simplification"})
 REQUIRED_NATIVE_AGENTS = frozenset(
@@ -138,7 +151,7 @@ SCHEMA: dict[str, Any] = {
             "required": FieldSpec("bool"),
             "command": FieldSpec("string-list", allow_empty=False),
             "model": FieldSpec("str", fixed="zai/glm-5.2", has_fixed=True),
-            "thinking": FieldSpec("str", fixed="xhigh", has_fixed=True),
+            "thinking": FieldSpec("str", fixed="high", has_fixed=True),
             "direct": FieldSpec("bool", fixed=True, has_fixed=True),
             "data_sharing_approved": FieldSpec("bool"),
             "timeout_seconds": FieldSpec("int", 1, 86_400),
@@ -148,6 +161,10 @@ SCHEMA: dict[str, Any] = {
     "agents": DynamicTableSpec(AGENT_PROFILE_SCHEMA),
     "finalize": {"enabled": FieldSpec("bool")},
     "learning": {"auto_propose": FieldSpec("bool")},
+    "lazy": {
+        "max_plan_review_iterations": FieldSpec("int", 1, 10),
+        "plan_review_agents": FieldSpec("string-list", allow_empty=False),
+    },
     "plans": {
         "directory": FieldSpec("str", allow_empty=False),
         "move_on_completion": FieldSpec("bool"),
@@ -191,6 +208,7 @@ class EffectiveConfig:
     prompts: dict[str, Replacement]
     agents: dict[str, Replacement]
     selected_agents: tuple[str, ...]
+    lazy_plan_review_agents: tuple[str, ...]
     profiles: dict[str, ProfileSelection]
     rules: tuple[Fragment, ...]
 
@@ -562,12 +580,27 @@ def load_effective(
     external_review = values["review"]["external"]
     if external_review["idle_timeout_seconds"] >= external_review["timeout_seconds"]:
         raise ConfigError("review.external.idle_timeout_seconds must be less than timeout_seconds")
-    for path in ("review.agents", "review.disabled_agents", "profiles.enable", "profiles.disable"):
+    for path in (
+        "review.agents",
+        "review.disabled_agents",
+        "lazy.plan_review_agents",
+        "profiles.enable",
+        "profiles.disable",
+    ):
         table, key = path.split(".")
         entries = values[table][key]
         if len(entries) != len(set(entries)):
             raise ConfigError(f"{path}: duplicate entries are not allowed")
 
+    missing_embedded_prompts = {
+        name
+        for name in REQUIRED_PROMPTS
+        if meaningful_text(defaults_root / "prompts" / f"{name}.md") is None
+    }
+    if missing_embedded_prompts:
+        raise ConfigError(
+            "missing required embedded prompts: " + ", ".join(sorted(missing_embedded_prompts))
+        )
     prompts = resolve_replacements(
         "prompt", defaults_root / "prompts", user_root / "prompts", project_custom / "prompts"
     )
@@ -592,8 +625,30 @@ def load_effective(
     if unknown_agents:
         raise ConfigError(f"unknown review agents: {', '.join(sorted(unknown_agents))}")
     selected_agents = tuple(name for name in configured_agents if name not in disabled_agents)
+    lazy_agents = values["lazy"]["plan_review_agents"]
+    unknown_lazy_agents = set(lazy_agents) - set(agents)
+    if unknown_lazy_agents:
+        raise ConfigError(f"unknown lazy plan-review agents: {', '.join(sorted(unknown_lazy_agents))}")
+    unmapped_lazy_agents = set(lazy_agents) - set(values["review"]["agent_profiles"])
+    if unmapped_lazy_agents:
+        raise ConfigError(
+            "lazy plan-review agents have no review.agent_profiles mapping: "
+            + ", ".join(sorted(unmapped_lazy_agents))
+        )
+    lazy_plan_review_agents = tuple(name for name in lazy_agents if name not in disabled_agents)
+    if not lazy_plan_review_agents:
+        raise ConfigError("lazy.plan_review_agents: all configured roles are disabled")
     rules = _compose_rules(profiles, user_root, project_custom, root, touched_files)
-    return EffectiveConfig(values, origins, prompts, agents, selected_agents, profiles, rules)
+    return EffectiveConfig(
+        values,
+        origins,
+        prompts,
+        agents,
+        selected_agents,
+        lazy_plan_review_agents,
+        profiles,
+        rules,
+    )
 
 
 def _redact(values: Any, path: str = "") -> Any:
@@ -617,6 +672,7 @@ def show_payload(config: EffectiveConfig) -> dict[str, Any]:
             for name, item in sorted(config.agents.items())
         },
         "selected_agents": list(config.selected_agents),
+        "lazy_plan_review_agents": list(config.lazy_plan_review_agents),
         "profiles": {
             name: {
                 "detected_from": list(item.detected_from),
@@ -667,6 +723,11 @@ INIT_FILES = {
             "finalize",
             "pi-review",
             "learning",
+            "lazy-discovery",
+            "lazy-design",
+            "lazy-plan",
+            "lazy-plan-review",
+            "lazy-plan-fix",
         )
     },
     "agents/domain.md": "# Define an optional project-specific domain review role here.\n",

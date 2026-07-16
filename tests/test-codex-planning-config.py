@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -252,6 +253,7 @@ class PlanningConfigTests(unittest.TestCase):
             ("[execution]\nsession_timeout = \"1 hour\"\n", "invalid duration"),
             ("[review]\nmax_iterations = 0\n", "must be >= 1"),
             ("[review.external]\nmodel = \"other/model\"\n", "must remain"),
+            ("[review.external]\nthinking = \"xhigh\"\n", "must remain"),
             ("[review.external]\ndirect = false\n", "must remain"),
             ("[review.external]\nbackend = \"none\"\nrequired = true\n", "cannot be true"),
         )
@@ -271,7 +273,7 @@ class PlanningConfigTests(unittest.TestCase):
         self.assertEqual("embedded", config.prompts["task"].source)
         self.assertEqual("embedded", config.agents["quality"].source)
         self.assertEqual(1, config.values["execution"]["task_retries"])
-        self.assertEqual(900, config.values["review"]["external"]["timeout_seconds"])
+        self.assertEqual(1200, config.values["review"]["external"]["timeout_seconds"])
         self.assertEqual(120, config.values["review"]["external"]["idle_timeout_seconds"])
         self.assertFalse(config.values["review"]["external"]["data_sharing_approved"])
 
@@ -285,6 +287,94 @@ class PlanningConfigTests(unittest.TestCase):
         self.assertIn("project:", config.origins["review.external.data_sharing_approved"])
         self.assertTrue(config.values["learning"]["auto_propose"])
         self.assertEqual("embedded", config.prompts["learning"].source)
+
+    def test_lazy_defaults_and_effective_sources_are_reported(self) -> None:
+        config = self.load()
+        self.assertEqual(2, config.values["lazy"]["max_plan_review_iterations"])
+        self.assertEqual(
+            ("implementation", "quality", "testing"),
+            config.lazy_plan_review_agents,
+        )
+        payload = CONFIG.show_payload(config)
+        self.assertEqual(
+            ["implementation", "quality", "testing"],
+            payload["lazy_plan_review_agents"],
+        )
+        self.assertTrue(config.origins["lazy.max_plan_review_iterations"].startswith("embedded:"))
+        for prompt in (
+            "lazy-discovery",
+            "lazy-design",
+            "lazy-plan",
+            "lazy-plan-review",
+            "lazy-plan-fix",
+        ):
+            self.assertEqual("embedded", config.prompts[prompt].source)
+
+    def test_lazy_project_and_user_precedence_is_per_field(self) -> None:
+        self.write(
+            self.user / "config.toml",
+            "[lazy]\nmax_plan_review_iterations = 4\n"
+            'plan_review_agents = ["implementation", "quality"]\n',
+        )
+        self.write(
+            self.custom / "config.toml",
+            "[lazy]\nmax_plan_review_iterations = 3\n",
+        )
+        config = self.load()
+        self.assertEqual(3, config.values["lazy"]["max_plan_review_iterations"])
+        self.assertEqual(("implementation", "quality"), config.lazy_plan_review_agents)
+        self.assertTrue(config.origins["lazy.max_plan_review_iterations"].startswith("project:"))
+        self.assertTrue(config.origins["lazy.plan_review_agents"].startswith("user:"))
+
+    def test_lazy_roles_reject_unknown_duplicate_and_unmapped_entries(self) -> None:
+        cases = (
+            ('[lazy]\nplan_review_agents = ["missing"]\n', "unknown lazy plan-review agents"),
+            (
+                '[lazy]\nplan_review_agents = ["quality", "quality"]\n',
+                "duplicate entries",
+            ),
+        )
+        for body, message in cases:
+            with self.subTest(body=body):
+                self.write(self.custom / "config.toml", body)
+                with self.assertRaisesRegex(CONFIG.ConfigError, message):
+                    self.load()
+        self.write(self.custom / "agents/domain.md", "Review domain behavior.\n")
+        self.write(self.custom / "config.toml", '[lazy]\nplan_review_agents = ["domain"]\n')
+        with self.assertRaisesRegex(CONFIG.ConfigError, "no review.agent_profiles mapping"):
+            self.load()
+
+    def test_lazy_disabled_roles_are_filtered_but_result_must_not_be_empty(self) -> None:
+        self.write(
+            self.custom / "config.toml",
+            '[review]\ndisabled_agents = ["quality"]\n'
+            '[lazy]\nplan_review_agents = ["implementation", "quality"]\n',
+        )
+        self.assertEqual(("implementation",), self.load().lazy_plan_review_agents)
+        self.write(
+            self.custom / "config.toml",
+            '[review]\ndisabled_agents = ["implementation", "quality"]\n'
+            '[lazy]\nplan_review_agents = ["implementation", "quality"]\n',
+        )
+        with self.assertRaisesRegex(CONFIG.ConfigError, "all configured roles are disabled"):
+            self.load()
+
+    def test_lazy_iteration_bounds_and_required_packaged_prompts(self) -> None:
+        for value in (0, 11):
+            with self.subTest(value=value):
+                self.write(
+                    self.custom / "config.toml",
+                    f"[lazy]\nmax_plan_review_iterations = {value}\n",
+                )
+                with self.assertRaisesRegex(CONFIG.ConfigError, "must be"):
+                    self.load()
+        copied_defaults = self.root / "defaults"
+        (self.custom / "config.toml").unlink()
+        shutil.copytree(REPO / "plugins/phasemill/defaults", copied_defaults)
+        (copied_defaults / "prompts/lazy-plan.md").unlink()
+        self.write(self.custom / "prompts/lazy-plan.md", "project replacement must not mask packaging\n")
+        with self.assertRaisesRegex(CONFIG.ConfigError, "lazy-plan"):
+            self.load(defaults_root=copied_defaults)
 
     def test_embedded_review_guidance_covers_wiring_smells_and_go_boundaries(self) -> None:
         self.write(self.project / "go.mod", "module example.test/project\n")

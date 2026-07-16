@@ -1,7 +1,7 @@
 {
   "name": "phasemill",
   "version": "1.2.0",
-  "description": "A durable Codex workflow for planning, implementation, review, project learning, and release.",
+  "description": "A durable Codex workflow for autonomous planning, implementation, review, project learning, and release.",
   "author": {
     "name": "Krajcik",
     "url": "https://github.com/krajcik"
@@ -15,14 +15,15 @@
     "state-machine",
     "code-review",
     "subagents",
-    "workflow"
+    "workflow",
+    "autonomous"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Phasemill",
-    "shortDescription": "Run durable engineering and proposal-only learning workflows",
-    "longDescription": "Phasemill guides Codex through repository-grounded design, planning, implementation, native subagent review, independent Pi review, proposal-only project learning, and release using a restart-safe state machine.",
+    "shortDescription": "Run focused or autonomous durable engineering workflows",
+    "longDescription": "Phasemill guides Codex through repository-grounded design, planning, implementation, native subagent review, independent Pi review, proposal-only project learning, and release using a restart-safe state machine. Its lazy mode can carry an idea through the complete workflow while preserving every explicit safety gate.",
     "developerName": "Krajcik",
     "category": "Developer Tools",
     "capabilities": [
@@ -34,6 +35,7 @@
     "privacyPolicyURL": "https://github.com/krajcik/phasemill/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/krajcik/phasemill/blob/main/TERMS.md",
     "defaultPrompt": [
+      "Take this idea through the complete Phasemill workflow with minimal interaction.",
       "Design and plan this change before implementation.",
       "Execute the accepted plan and review the result.",
       "Resume the active Phasemill run.",

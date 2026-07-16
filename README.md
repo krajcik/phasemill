@@ -1,9 +1,9 @@
 # Phasemill
 
 Phasemill is a Codex plugin for repository-grounded design, planning,
-implementation, review, and release. It combines narrow skills with a durable
-local state machine, native Codex subagents, optional advisory hooks, worktree
-isolation, and an independent read-only Pi review.
+implementation, review, and release. It combines focused and autonomous skills
+with a durable local state machine, native Codex subagents, optional advisory
+hooks, worktree isolation, and an independent read-only Pi review.
 
 The plugin is self-contained and dependency-free at runtime except for
 `python3`, `git`, Codex, and optional `pi`. It does not launch nested Codex CLI
@@ -29,12 +29,23 @@ $plan write the accepted design to docs/plans/
 $plan-review review docs/plans/20260715-retry-policy.md
 $run execute docs/plans/20260715-retry-policy.md
 $status show or resume the active Phasemill run
+$lazy add the retry policy end to end with minimal interaction
 ```
 
 `run` advances one revision-bound action at a time through implementation,
 native read-only review, optional Pi review, finalization, and proposal-only
 learning. Durable state is stored under `.phasemill/runs/`; add
 `/.phasemill/runs/` to the project `.gitignore` before an in-place run.
+
+`lazy` autonomously advances a durable discovery, design, exclusive plan,
+bounded plan-review/fix, and normal `$run` handoff. Retrying the original start
+request is idempotent; after a turn or session interruption, use `$lazy continue`
+or `$status` to resume the same pending action. `$status` reports both the
+preparation journey and its linked implementation run without advancing either.
+It pauses for ambiguity, overlapping active work, permissions, worktree changes,
+Pi data-sharing consent, and exhausted retries. Commit, push, release, publish,
+deploy, worktree cleanup, and learning-proposal application remain outside
+`$lazy` as separate explicitly requested workflows.
 
 Other bundled skills cover PR and local diff review, release preparation,
 unreleased changes, root-cause investigation, dialectic analysis, concise
@@ -62,15 +73,21 @@ commits learning updates implicitly.
 - `skills/` exposes small intent-specific entry points instead of one oversized
   prompt.
 - `mcp/server.py` exposes typed config and state-machine tools over local stdio
-  JSON-RPC. It owns sequencing and durable state, including the advisory
-  learning transition, but never repository edits.
+  JSON-RPC. Separate lazy-preparation and implementation-run transitions own
+  sequencing and durable state, including the advisory learning transition,
+  but never repository edits.
 - native Codex subagents perform implementation and read-only review. Current
   children inherit the root session runtime; per-role model profiles remain
   validated routing hints for future native support.
-- `hooks/` adds advisory skill evaluation and compact active-run context. Hooks
-  never become the durable source of truth.
+- `hooks/` adds advisory skill evaluation and compact active-journey/run
+  context. Hooks never become the durable source of truth.
+- `engine/lazy_controller.py` persists the idea-to-plan journey and performs an
+  exact, origin-bound handoff to the normal run controller; optional review,
+  Pi, finalize, learning, plan-move, and worktree settings remain authoritative.
 - `engine/pi_review.py` runs optional independent review through Pi with
-  `zai/glm-5.2`, `xhigh`, direct networking, and read-only repository tools.
+  `zai/glm-5.2`, `high`, direct networking, and read-only repository tools.
+  A strict 40-tool prompt budget requires Pi to stop broad exploration after
+  30 calls and return a concise final review before the wall timeout.
   It imports only the stored ZAI API key into an isolated temporary Pi config
   directory, so non-interactive Codex sandboxes do not need write access to
   `~/.pi/agent` and personal Pi settings or extensions are not loaded.

@@ -148,17 +148,21 @@ class PiReviewTests(unittest.TestCase):
             required=required,
         )
 
-    def test_command_uses_fixed_model_xhigh_and_read_only_tools(self) -> None:
+    def test_command_uses_fixed_model_high_and_read_only_tools(self) -> None:
         result = self.run_adapter()
         self.assertEqual("ok", result.status)
         args = json.loads(self.args_file.read_text(encoding="utf-8"))
         self.assertEqual(list(PI_REVIEW.PI_ARGS), args)
         self.assertEqual("zai/glm-5.2", args[args.index("--model") + 1])
-        self.assertEqual("xhigh", args[args.index("--thinking") + 1])
+        self.assertEqual("high", args[args.index("--thinking") + 1])
         self.assertEqual("read,grep,find,ls", args[args.index("--tools") + 1])
         self.assertNotIn("--no-tools", args)
         for forbidden in ("bash", "edit", "write"):
             self.assertNotIn(forbidden, args[args.index("--tools") + 1].split(","))
+        prompt = self.prompt_file.read_text(encoding="utf-8")
+        self.assertIn("Use at most 40 tool calls", prompt)
+        self.assertIn("Stop broad exploration after 30 tool calls", prompt)
+        self.assertIn("A concise final review is required", prompt)
 
     def test_subprocess_forces_direct_network_without_proxy(self) -> None:
         for key in PI_REVIEW.PROXY_ENV_KEYS:
@@ -187,9 +191,12 @@ class PiReviewTests(unittest.TestCase):
         child_env = json.loads(self.env_file.read_text(encoding="utf-8"))
         self.assertEqual("", child_env["ZAI_API_KEY"])
 
-    def test_prompt_is_passed_through_stdin_and_model_is_reported(self) -> None:
+    def test_prompt_and_fixed_budget_are_passed_through_stdin(self) -> None:
         result = self.run_adapter()
-        self.assertEqual("Review this diff", self.prompt_file.read_text(encoding="utf-8"))
+        self.assertEqual(
+            f"Review this diff\n\n{PI_REVIEW.REVIEW_BUDGET_INSTRUCTION}\n",
+            self.prompt_file.read_text(encoding="utf-8"),
+        )
         self.assertEqual("zai", result.provider)
         self.assertEqual("glm-5.2", result.model)
         self.assertIn("broken invariant", result.review)

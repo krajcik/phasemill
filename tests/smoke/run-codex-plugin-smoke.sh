@@ -8,6 +8,7 @@ exec python3 - "$0" "$@" <<'PY'
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ EXPECTED_SKILLS = {
         "dialectic",
         "git-review",
         "learn",
+        "lazy",
         "md-copy",
         "plan",
         "plan-review",
@@ -226,6 +228,12 @@ def assert_mutation_guards(installed: dict[str, Path]) -> None:
             "ask which candidate numbers to apply",
             "ask for approval before writing",
         ),
+        root / "skills/lazy/SKILL.md": (
+            "plan_write_mode=create-exclusive",
+            "Commit, push, release, publish, deploy, worktree cleanup",
+            "never start a second run",
+            "never applies `.codex/phasemill/`",
+        ),
     }
     for path, phrases in checks.items():
         text = path.read_text(encoding="utf-8")
@@ -351,6 +359,203 @@ def verify_planning_pipeline(installed: dict[str, Path], root: Path) -> None:
         raise SmokeError("fixture unexpectedly gained a remote")
 
 
+def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
+    phasemill = installed["phasemill"]
+    fixture = root / "lazy-fixture"
+    init_repo(fixture, plan_name="20260715-existing.md")
+    config_dir = fixture / ".codex/phasemill"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        "[review.external]\nbackend = \"none\"\n\n"
+        "[finalize]\nenabled = false\n\n"
+        "[plans]\nmove_on_completion = false\n",
+        encoding="utf-8",
+    )
+
+    lazy = phasemill / "engine/lazy_controller.py"
+    run_controller = phasemill / "engine/phase_controller.py"
+    lazy_base = [sys.executable, lazy, "--project-root", fixture]
+    run_base = [sys.executable, run_controller, "--project-root", fixture, "--default-branch", "main"]
+    head_before = git(fixture, "rev-parse", "HEAD")
+    branch_before = git(fixture, "branch", "--show-current")
+
+    action = run_json(
+        [
+            *lazy_base,
+            "start",
+            "--request-id",
+            "installed-lazy-smoke-request",
+            "--idea",
+            "Add a retry result fixture",
+        ]
+    )
+    if action.get("kind") != "discovery":
+        raise SmokeError(f"lazy journey did not start in discovery: {action}")
+    replay = run_json(
+        [
+            *lazy_base,
+            "start",
+            "--request-id",
+            "installed-lazy-smoke-request",
+            "--idea",
+            "Add a retry result fixture",
+        ]
+    )
+    if replay.get("action_id") != action.get("action_id"):
+        raise SmokeError("lost lazy_start response did not replay the same action")
+    journey_id = str(action["action_id"]).split(":", 1)[0]
+
+    def lazy_record(result: dict[str, Any]) -> dict[str, Any]:
+        nonlocal action
+        action = run_json(
+            [*lazy_base, "record", journey_id, "--action-id", str(action["action_id"])],
+            input_text=json.dumps(result),
+        )
+        return action
+
+    lazy_record(
+        {
+            "outcome": "completed",
+            "summary": "installed discovery complete",
+            "scope_paths": ["src", "tests"],
+        }
+    )
+    if action.get("kind") != "design":
+        raise SmokeError(f"lazy discovery did not advance to design: {action}")
+
+    lazy_record(
+        {
+            "outcome": "needs-input",
+            "question": "Preserve the existing retry result format?",
+            "options": ["Preserve it", "Stop"],
+            "gate": "material-design",
+        }
+    )
+    if action.get("kind") != "input":
+        raise SmokeError(f"lazy input was not persisted: {action}")
+    resumed_input = run_json([*lazy_base, "next", journey_id])
+    if resumed_input.get("action_id") != action.get("action_id"):
+        raise SmokeError("waiting lazy input did not resume the same action")
+    lazy_record({"outcome": "answered", "answer": "Preserve it", "decision": "continue"})
+    if action.get("kind") != "design":
+        raise SmokeError(f"lazy input did not resume the preserved phase: {action}")
+    lazy_record({"outcome": "completed", "summary": "conservative design selected"})
+    if action.get("kind") != "plan" or action.get("plan_write_mode") != "create-exclusive":
+        raise SmokeError(f"lazy design did not reserve an exclusive plan: {action}")
+    if "Lazy authorization override" not in action.get("prompt", ""):
+        raise SmokeError("lazy plan prompt did not supersede only the acceptance pause")
+
+    plan = fixture / str(action["plan_path"])
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    with plan.open("x", encoding="utf-8") as output:
+        output.write(
+            "# Lazy installed plan\n\n"
+            "### Task 1: Produce retry result\n\n"
+            "- [ ] create `lazy-result.txt`\n"
+            "- [ ] validate installed lazy behavior\n"
+        )
+    digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+    lazy_record(
+        {
+            "outcome": "completed",
+            "plan_path": str(action["plan_path"]),
+            "plan_digest": digest,
+        }
+    )
+    if action.get("kind") != "plan-review" or len(action.get("roles", [])) < 2:
+        raise SmokeError(f"lazy plan did not enter bounded review: {action}")
+
+    finding = {
+        "id": "smoke-validation",
+        "location": f"{action['plan_path']}:5",
+        "evidence": "the plan needs an explicit narrow command",
+        "consequence": "validation would be ambiguous",
+        "proposed_fix": "add the exact assertion to the plan",
+    }
+    lazy_record({"outcome": "findings", "findings": [finding]})
+    if action.get("kind") != "plan-fix":
+        raise SmokeError(f"lazy findings did not enter plan fix: {action}")
+    previous_digest = str(action["plan_digest"])
+    plan.write_text(
+        plan.read_text(encoding="utf-8")
+        + "\nValidation: `test -f lazy-result.txt`.\n",
+        encoding="utf-8",
+    )
+    fixed_digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+    lazy_record(
+        {
+            "outcome": "completed",
+            "plan_path": str(action["plan_path"]),
+            "previous_plan_digest": previous_digest,
+            "plan_digest": fixed_digest,
+        }
+    )
+    if action.get("kind") != "plan-review":
+        raise SmokeError(f"lazy plan fix did not return to review: {action}")
+    lazy_record({"outcome": "clean", "summary": "verified plan is executable"})
+    if action.get("kind") != "handoff" or action.get("matching_run_id"):
+        raise SmokeError(f"lazy clean plan did not reach empty handoff: {action}")
+
+    run_action = run_json([*run_base, "start", plan])
+    if run_action.get("kind") != "task":
+        raise SmokeError(f"synthetic exact run did not start: {run_action}")
+    matching = run_json([*lazy_base, "next", journey_id])
+    run_id = str(run_action["action_id"]).split(":", 1)[0]
+    if matching.get("matching_run_id") != run_id or matching.get("action_id") != action.get("action_id"):
+        raise SmokeError("lazy handoff did not discover the crash-window exact run")
+
+    (fixture / "lazy-result.txt").write_text("installed lazy pipeline passed\n", encoding="utf-8")
+    plan.write_text(plan.read_text(encoding="utf-8").replace("- [ ]", "- [x]"), encoding="utf-8")
+    run_action = run_json(
+        [*run_base, "record", plan, "--action-id", str(run_action["action_id"])],
+        input_text=json.dumps({"outcome": "completed", "summary": "synthetic implementation complete"}),
+    )
+    if run_action.get("kind") != "review":
+        raise SmokeError(f"synthetic run did not reach review: {run_action}")
+    run_action = run_json(
+        [*run_base, "record", plan, "--action-id", str(run_action["action_id"])],
+        input_text=json.dumps({"outcome": "clean", "summary": "synthetic review clean"}),
+    )
+    if run_action.get("kind") != "learning":
+        raise SmokeError(f"synthetic run did not reach proposal-only learning: {run_action}")
+    run_action = run_json(
+        [*run_base, "record", plan, "--action-id", str(run_action["action_id"])],
+        input_text=json.dumps({"outcome": "clean", "summary": "no durable learning signal"}),
+    )
+    if run_action.get("kind") != "done":
+        raise SmokeError(f"synthetic exact run did not complete: {run_action}")
+
+    action = matching
+    lazy_record(
+        {
+            "outcome": "completed",
+            "linked_run_id": run_id,
+            "execution_project_root": str(fixture),
+            "execution_plan_path": str(action["execution_plan_path"]),
+            "run_outcome": "completed",
+        }
+    )
+    if action.get("kind") != "done" or action.get("matching_run_id") != run_id:
+        raise SmokeError(f"lazy journey did not record terminal exact run: {action}")
+    lazy_status = run_json([*lazy_base, "status", "--journey-id", journey_id]).get("state", {})
+    if lazy_status.get("status") != "completed" or lazy_status.get("linked_run_id") != run_id:
+        raise SmokeError(f"lazy terminal state is invalid: {lazy_status}")
+
+    unexpected_scope_writes = [
+        path for path in config_dir.rglob("*") if path.is_file() and path.name != "config.toml"
+    ]
+    if unexpected_scope_writes:
+        raise SmokeError(f"lazy proposal-only learning mutated project scope: {unexpected_scope_writes}")
+    if ".phasemill/runs" in git(fixture, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise SmokeError("lazy runtime state polluted Git status")
+    if git(fixture, "rev-parse", "HEAD") != head_before:
+        raise SmokeError("lazy pipeline created a commit without approval")
+    if git(fixture, "branch", "--show-current") != branch_before:
+        raise SmokeError("lazy pipeline changed the main branch")
+    if git(fixture, "remote"):
+        raise SmokeError("lazy fixture unexpectedly gained a remote")
+
+
 def parse_kv(output: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in output.splitlines():
@@ -429,6 +634,7 @@ def main(argv: list[str]) -> int:
         installed = verify_install(codex, repo, temp_root / "codex-home")
         assert_mutation_guards(installed)
         verify_planning_pipeline(installed, temp_root)
+        verify_lazy_pipeline(installed, temp_root)
         verify_worktree(installed, temp_root)
         summary = {
             "status": "passed",
@@ -438,6 +644,7 @@ def main(argv: list[str]) -> int:
             "clean_codex_home": True,
             "installed_cache_only": True,
             "planning_pipeline": "passed",
+            "lazy_pipeline": "passed",
             "retry_resume": "passed",
             "review_fanout_contract": "passed",
             "proposal_only_learning": "passed",

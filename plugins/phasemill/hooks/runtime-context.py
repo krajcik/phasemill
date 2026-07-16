@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inject compact recovery context for active Phasemill runs."""
+"""Inject compact advisory recovery context for active Phasemill state."""
 
 from __future__ import annotations
 
@@ -9,17 +9,55 @@ import sys
 from typing import Any
 
 
-def _active_runs(cwd: Path) -> list[dict[str, Any]]:
-    directory = cwd / ".phasemill" / "runs"
-    runs: list[dict[str, Any]] = []
-    for path in sorted(directory.glob("state-*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _read_active(paths: list[Path], statuses: set[str]) -> list[dict[str, Any]]:
+    active: list[dict[str, Any]] = []
+    for path in sorted(paths, key=_mtime, reverse=True):
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             continue
-        if isinstance(value, dict) and value.get("status") == "running":
-            runs.append(value)
-    return runs
+        if isinstance(value, dict) and value.get("status") in statuses:
+            active.append(value)
+    return active
+
+
+def _confined_state_paths(repository: Path, directory: Path, pattern: str) -> list[Path]:
+    try:
+        repository_root = repository.resolve()
+        root = directory.resolve()
+    except OSError:
+        return []
+    if repository_root != root and repository_root not in root.parents:
+        return []
+    confined: list[Path] = []
+    for path in directory.glob(pattern):
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if root in resolved.parents and resolved.is_file():
+            confined.append(resolved)
+    return confined
+
+
+def _active_runs(cwd: Path) -> list[dict[str, Any]]:
+    directory = cwd / ".phasemill" / "runs"
+    return _read_active(_confined_state_paths(cwd, directory, "state-*.json"), {"running"})
+
+
+def _active_lazy(cwd: Path) -> list[dict[str, Any]]:
+    directory = cwd / ".phasemill" / "runs"
+    return _read_active(
+        _confined_state_paths(cwd, directory, "lazy-*/state.json"),
+        {"running", "waiting-input"},
+    )
 
 
 def main() -> int:
@@ -32,19 +70,32 @@ def main() -> int:
     cwd = event.get("cwd")
     if not isinstance(cwd, str) or not cwd:
         return 0
-    runs = _active_runs(Path(cwd).resolve())
-    if not runs:
+    root = Path(cwd).resolve()
+    lazy = _active_lazy(root)
+    runs = _active_runs(root)
+    if not lazy and not runs:
         return 0
-    summaries = [
-        f"- plan={run.get('plan_path', '?')} phase={run.get('phase', '?')} "
-        f"revision={run.get('revision', '?')} run_id={run.get('run_id', '?')}"
-        for run in runs[:5]
-    ]
-    context = (
-        "Phasemill has active durable run state:\n"
-        + "\n".join(summaries)
-        + "\nUse mcp__phasemill__run_status before continuing; do not infer the phase from the transcript."
+    sections = ["Phasemill durable recovery context (advisory only):"]
+    if lazy:
+        sections.append("Lazy journeys:")
+        sections.extend(
+            f"- journey={state.get('journey_id', '?')} phase={state.get('phase', '?')} "
+            f"status={state.get('status', '?')} revision={state.get('revision', '?')} "
+            f"plan={state.get('plan_path') or '-'} linked_run={state.get('linked_run_id') or '-'}"
+            for state in lazy[:5]
+        )
+    if runs:
+        sections.append("Implementation runs:")
+        sections.extend(
+            f"- run={run.get('run_id', '?')} phase={run.get('phase', '?')} "
+            f"revision={run.get('revision', '?')} plan={run.get('plan_path', '?')}"
+            for run in runs[:5]
+        )
+    sections.append(
+        "Use mcp__phasemill__lazy_status and mcp__phasemill__run_status before continuing. "
+        "This hook never advances or repairs either controller."
     )
+    context = "\n".join(sections)
     print(
         json.dumps(
             {

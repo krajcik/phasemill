@@ -101,7 +101,7 @@ class PhaseControllerTests(unittest.TestCase):
 
         action = self.reach_external(controller, action)
         self.assertEqual("external-review", action.kind)
-        self.assertEqual(900, action.external["timeout_seconds"])
+        self.assertEqual(1200, action.external["timeout_seconds"])
         self.assertEqual(120, action.external["idle_timeout_seconds"])
         action = controller.record_result(action.action_id, self.result("clean"))
         self.assertEqual("learning", action.kind)

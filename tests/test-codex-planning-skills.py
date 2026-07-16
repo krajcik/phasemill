@@ -14,7 +14,7 @@ SKILL_ROOT = REPO / "plugins/phasemill/skills"
 MANIFEST = REPO / "plugins/phasemill/.codex-plugin/plugin.json"
 SKILLS = {
     name: SKILL_ROOT / name / "SKILL.md"
-    for name in ("plan", "plan-review", "run", "status")
+    for name in ("plan", "plan-review", "run", "status", "lazy")
 }
 
 
@@ -129,6 +129,79 @@ class CodexPlanningSkillTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
+    def test_lazy_drives_autonomous_revision_bound_preparation(self) -> None:
+        text = self.normalized["lazy"]
+        for phrase in (
+            "mcp__phasemill__lazy_start",
+            "mcp__phasemill__lazy_status",
+            "mcp__phasemill__lazy_next",
+            "mcp__phasemill__lazy_record",
+            "caller-stable request id",
+            "kind=discovery",
+            "kind=design",
+            "kind=plan",
+            "kind=plan-review",
+            "kind=plan-fix",
+            "kind=input",
+            "kind=handoff",
+            "exact `action_id`",
+            "same action id",
+        ):
+            self.assertIn(phrase, text)
+        self.assertIn("without a separate acceptance pause", text)
+        self.assertIn("plan_write_mode=create-exclusive", text)
+        self.assertIn("no-replace", text)
+
+    def test_lazy_review_handoff_and_learning_preserve_existing_contracts(self) -> None:
+        text = self.normalized["lazy"]
+        for phrase in (
+            "root deduplicates and verifies every claim",
+            "bounded by `max_parallel_agents`",
+            "inherit the root session's model and reasoning",
+            "future routing hints only",
+            "matching_run_id",
+            "run_status",
+            "run_start",
+            "run_next",
+            "never start a second run",
+            "unrelated active run must not be linked",
+            "proposal-only learning",
+            "phasemill:learn",
+        ):
+            self.assertIn(phrase, text)
+
+    def test_lazy_all_safety_gates_and_external_mutations_are_explicit(self) -> None:
+        text = self.normalized["lazy"]
+        for phrase in (
+            "overlapping dirty scope",
+            "sandbox, network, or write permission",
+            "worktree.sh prepare",
+            "Pi data sharing",
+            "exhausted task or plan-review retries",
+            "commit, amend, rebase, push",
+            "release, publish, deploy",
+            "applying any learning proposal",
+            "outside `$lazy`",
+            "Do not run raw `git worktree add`",
+            "do not commit, push, publish, deploy",
+        ):
+            self.assertIn(phrase.lower(), text.lower())
+
+    def test_status_combines_lazy_and_run_without_advancing_state(self) -> None:
+        text = self.normalized["status"]
+        for phrase in (
+            "mcp__phasemill__lazy_status",
+            "mcp__phasemill__run_status",
+            "labelled separately",
+            "exactly one lazy journey",
+            "ask the user to choose",
+            "phasemill:lazy",
+            "run-only status",
+            "recorded origin repository",
+            "Never call `lazy_start` or `run_start` merely to inspect status",
+        ):
+            self.assertIn(phrase, text)
+
     def test_exec_bounds_native_fanout_and_keeps_reviewers_read_only(self) -> None:
         text = self.normalized["run"]
         self.assertIn("exactly one native implementation subagent", text)
@@ -160,7 +233,8 @@ class CodexPlanningSkillTests(unittest.TestCase):
             "`mcp__phasemill__external_review`",
             "pass the prompt through stdin",
             "direct without proxy",
-            "`zai/glm-5.2` at `xhigh`",
+            "`zai/glm-5.2` at `high`",
+            "a concise final result by call",
             "`read,grep,find,ls`",
             "Do not call Pi directly",
             "`review.external.data_sharing_approved=true`",

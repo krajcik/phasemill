@@ -19,8 +19,19 @@ from typing import Any, Sequence, TextIO
 
 
 PI_MODEL = "zai/glm-5.2"
-PI_THINKING = "xhigh"
+PI_THINKING = "high"
 READ_ONLY_TOOLS = "read,grep,find,ls"
+REVIEW_BUDGET_INSTRUCTION = """
+
+## Strict review budget
+
+Use at most 40 tool calls. Prioritize the highest-risk changed code and its
+direct callers, callees, and tests. Stop broad exploration after 30 tool calls.
+After the fortieth tool call, do not call another tool: immediately return the
+best evidence-backed findings collected so far, or `NO ISSUES FOUND` when none
+are actionable. A concise final review is required; do not spend the remaining
+budget on optional context.
+""".strip()
 PROXY_ENV_KEYS = (
     "ALL_PROXY",
     "HTTP_PROXY",
@@ -308,7 +319,7 @@ def run_pi_review(
     *,
     cwd: Path,
     command: Sequence[str] = ("pi",),
-    timeout_seconds: float = 900,
+    timeout_seconds: float = 1200,
     idle_timeout_seconds: float = 120,
     required: bool = False,
 ) -> PiReviewResult:
@@ -359,7 +370,7 @@ def run_pi_review(
         stdout_thread.start()
         stderr_thread.start()
         try:
-            process.stdin.write(prompt)
+            process.stdin.write(f"{prompt.rstrip()}\n\n{REVIEW_BUDGET_INSTRUCTION}\n")
             process.stdin.close()
         except (BrokenPipeError, OSError):
             pass
@@ -428,7 +439,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cwd", type=Path, default=Path.cwd())
     parser.add_argument("--command-json", type=parse_command_json, default=["pi"])
-    parser.add_argument("--timeout-seconds", type=float, default=900)
+    parser.add_argument("--timeout-seconds", type=float, default=1200)
     parser.add_argument("--idle-timeout-seconds", type=float, default=120)
     parser.add_argument("--required", action="store_true")
     args = parser.parse_args()

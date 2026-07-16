@@ -28,10 +28,10 @@ backend = "pi"
 required = false
 command = ["pi"]
 model = "zai/glm-5.2"
-thinking = "xhigh"
+thinking = "high"
 direct = true
 data_sharing_approved = false
-timeout_seconds = 900
+timeout_seconds = 1200
 idle_timeout_seconds = 120
 
 [agents.planner]
@@ -92,6 +92,10 @@ enabled = false
 
 [learning]
 auto_propose = true
+
+[lazy]
+max_plan_review_iterations = 2
+plan_review_agents = ["implementation", "quality", "testing"]
 
 [plans]
 directory = "docs/plans"

@@ -192,9 +192,10 @@ the run. This consent never bypasses Codex sandbox, network, managed, or tenant
 policy and never converts a denied or failed required review into success.
 
 The adapter is the security boundary: Pi runs direct without proxy, uses
-`zai/glm-5.2` at `xhigh`, receives the full repository as cwd, and has only the
-read-only `read,grep,find,ls` tools. Do not call Pi directly or grant additional
-tools.
+`zai/glm-5.2` at `high`, receives the full repository as cwd, and has only the
+read-only `read,grep,find,ls` tools. It appends a fixed review budget requiring
+broad exploration to stop after 30 tool calls and a concise final result by call
+40. Do not call Pi directly or grant additional tools.
 
 Parse the adapter JSON. Preserve its elapsed time, turns, tool calls, last
 event, current tool, and partial output in timeout/failure summaries. Verify Pi
