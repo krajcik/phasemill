@@ -15,11 +15,23 @@ import tempfile
 from typing import Any, Iterator, Mapping
 
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 RUNS_DIRECTORY = Path(".phasemill/runs")
 ACTIVE_STATUSES = frozenset({"running", "waiting-input"})
 STATUSES = ACTIVE_STATUSES | {"completed", "failed"}
-PHASES = frozenset({"discovery", "design", "plan", "plan-review", "plan-fix", "handoff", "done"})
+PHASES = frozenset(
+    {
+        "bootstrap-worktree",
+        "bootstrap-config",
+        "discovery",
+        "design",
+        "plan",
+        "plan-review",
+        "plan-fix",
+        "handoff",
+        "done",
+    }
+)
 JOURNEY_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 EVENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -57,7 +69,10 @@ class LazyState:
     journey_id: str
     origin_project_root: str
     origin_identity: str
+    origin_head: str
     idea: str
+    lazy_worktree: bool
+    commit_after_stage: bool
     phase: str
     status: str
     revision: int
@@ -74,6 +89,7 @@ class LazyState:
     pending_gate: str
     preserved_phase: str
     execution_project_root: str
+    execution_branch: str
     execution_plan_path: str
     linked_run_id: str
     run_outcome: str
@@ -92,6 +108,15 @@ class LazyState:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> LazyState:
+        if value.get("version") == 1:
+            value = dict(value)
+            value["version"] = STATE_VERSION
+            value["origin_head"] = value.get("baseline_head", "")
+            value["lazy_worktree"] = False
+            value["commit_after_stage"] = False
+            value["execution_branch"] = ""
+            if not value.get("execution_project_root"):
+                value["execution_project_root"] = value.get("origin_project_root", "")
         fields = cls.__dataclass_fields__
         if set(value) != set(fields):
             missing = sorted(set(fields) - set(value))
@@ -122,6 +147,9 @@ class LazyState:
         _validate_text("idea", self.idea, MAX_IDEA, required=True)
         _validate_text("origin_identity", self.origin_identity, MAX_TEXT, required=True)
         _validate_absolute_path("origin_project_root", self.origin_project_root, required=True)
+        _validate_text("origin_head", self.origin_head, MAX_TEXT)
+        if type(self.lazy_worktree) is not bool or type(self.commit_after_stage) is not bool:
+            raise LazyStateError("lazy worktree and commit policy must be booleans")
         if self.phase not in PHASES:
             raise LazyStateError(f"invalid lazy state phase: {self.phase!r}")
         if self.status not in STATUSES:
@@ -166,9 +194,14 @@ class LazyState:
         elif self.pending_question or self.pending_options or self.pending_gate or self.preserved_phase:
             raise LazyStateError(f"{self.status} state must not contain pending input")
         _validate_absolute_path("execution_project_root", self.execution_project_root)
+        _validate_text("execution_branch", self.execution_branch, MAX_PATH)
         _validate_relative_path("execution_plan_path", self.execution_plan_path)
-        if bool(self.execution_project_root) != bool(self.execution_plan_path):
-            raise LazyStateError("execution project root and plan path must be set together")
+        if self.execution_plan_path and not self.execution_project_root:
+            raise LazyStateError("execution plan path requires an execution project root")
+        if self.lazy_worktree and self.execution_project_root and not self.execution_branch:
+            raise LazyStateError("lazy worktree execution root requires its branch")
+        if not self.lazy_worktree and self.execution_branch:
+            raise LazyStateError("in-place lazy execution must not record a worktree branch")
         for name in ("linked_run_id", "run_outcome", "baseline_head", "baseline_fingerprint", "failure"):
             _validate_text(name, getattr(self, name), MAX_TEXT)
         _validate_paths("baseline_dirty_paths", self.baseline_dirty_paths)
@@ -413,12 +446,24 @@ class LazyStateStore:
         self.paths = lazy_paths(self.project_root, journey_id)
 
     @classmethod
-    def start(cls, project_root: Path, *, request_id: str, idea: str) -> tuple[LazyStateStore, LazyState, bool]:
+    def start(
+        cls,
+        project_root: Path,
+        *,
+        request_id: str,
+        idea: str,
+        origin_head: str = "",
+        lazy_worktree: bool = False,
+        commit_after_stage: bool = False,
+    ) -> tuple[LazyStateStore, LazyState, bool]:
         root = project_root.resolve()
         if not root.is_dir():
             raise LazyStateError(f"project root is not a directory: {root}")
         _validate_request_id(request_id)
         _validate_text("idea", idea, MAX_IDEA, required=True)
+        _validate_text("origin_head", origin_head, MAX_TEXT)
+        if type(lazy_worktree) is not bool or type(commit_after_stage) is not bool:
+            raise LazyStateError("lazy worktree and commit policy must be booleans")
         identity = _root_identity(root)
         journey_id = _journey_id(identity, request_id)
         store = cls(root, journey_id)
@@ -437,8 +482,11 @@ class LazyStateStore:
                 journey_id=journey_id,
                 origin_project_root=str(root),
                 origin_identity=identity,
+                origin_head=origin_head,
                 idea=idea,
-                phase="discovery",
+                lazy_worktree=lazy_worktree,
+                commit_after_stage=commit_after_stage,
+                phase="bootstrap-worktree" if lazy_worktree else "bootstrap-config",
                 status="running",
                 revision=0,
                 started_at=now,
@@ -453,7 +501,8 @@ class LazyStateStore:
                 pending_options=(),
                 pending_gate="",
                 preserved_phase="",
-                execution_project_root="",
+                execution_project_root="" if lazy_worktree else str(root),
+                execution_branch="",
                 execution_plan_path="",
                 linked_run_id="",
                 run_outcome="",
@@ -516,7 +565,10 @@ class LazyStateStore:
             "journey_id",
             "origin_project_root",
             "origin_identity",
+            "origin_head",
             "idea",
+            "lazy_worktree",
+            "commit_after_stage",
             "revision",
             "started_at",
             "updated_at",

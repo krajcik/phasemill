@@ -104,6 +104,10 @@ class LazyAction:
     approved_plan_path: str = ""
     run_requirements: Mapping[str, Any] | None = None
     execution_project_root: str = ""
+    execution_branch: str = ""
+    origin_project_root: str = ""
+    origin_head: str = ""
+    commit_after_stage: bool = False
     execution_plan_path: str = ""
     matching_run_id: str = ""
     matching_run_status: str = ""
@@ -341,7 +345,12 @@ class LazyController:
         idea: str,
     ) -> tuple[LazyController, bool]:
         store, _, created = LAZY_STATE.LazyStateStore.start(
-            project_root, request_id=request_id, idea=idea
+            project_root,
+            request_id=request_id,
+            idea=idea,
+            origin_head=_git_snapshot(project_root.resolve()).head,
+            lazy_worktree=config.values["lazy"]["worktree"],
+            commit_after_stage=config.values["lazy"]["commit_after_stage"],
         )
         return cls(store, config), created
 
@@ -438,16 +447,22 @@ class LazyController:
         date = datetime.now(timezone.utc).strftime("%Y%m%d")
         filename = f"{date}-{_slug(state.idea)}-{state.journey_id[:8]}.md"
         relative = filename if plans_dir == "." else f"{plans_dir}/{filename}"
-        path = self._origin_plan(relative)
+        path = self._project_plan(state, relative)
         if path.exists():
             raise LazyControllerError(f"reserved plan path already exists: {relative}")
         return relative
 
-    def _origin_plan(self, relative: str) -> Path:
+    def _execution_root(self, state: Any) -> Path:
+        if not state.execution_project_root:
+            raise LazyControllerError("lazy execution root is not prepared")
+        return Path(state.execution_project_root).resolve()
+
+    def _project_plan(self, state: Any, relative: str) -> Path:
         normalized = _relative_path(relative, "plan_path")
-        path = (self.root / normalized).resolve(strict=False)
-        if self.root != path and self.root not in path.parents:
-            raise LazyControllerError(f"plan path escapes origin repository: {relative}")
+        root = self._execution_root(state)
+        path = (root / normalized).resolve(strict=False)
+        if root != path and root not in path.parents:
+            raise LazyControllerError(f"plan path escapes execution repository: {relative}")
         return path
 
     def _validate_plan_file(self, state: Any, result: LazyResult, *, fix: bool = False) -> str:
@@ -459,7 +474,7 @@ class LazyController:
             raise LazyControllerError("plan-fix result is not bound to the current plan digest")
         if not re.fullmatch(r"[0-9a-f]{64}", result.plan_digest):
             raise LazyControllerError("plan result requires a sha256 plan_digest")
-        path = self._origin_plan(state.plan_path)
+        path = self._project_plan(state, state.plan_path)
         if not path.is_file():
             raise LazyControllerError(f"plan file does not exist: {state.plan_path}")
         actual = _digest(path)
@@ -474,14 +489,14 @@ class LazyController:
 
     def _validate_current_digest(self, state: Any) -> None:
         if state.plan_path and state.plan_digest:
-            actual = _digest(self._origin_plan(state.plan_path))
+            actual = _digest(self._project_plan(state, state.plan_path))
             if actual != state.plan_digest:
                 raise LazyControllerError(
                     f"plan digest drift: state has {state.plan_digest}, file has {actual}"
                 )
 
     def _matching_run(self, state: Any) -> tuple[str, str]:
-        if self._handoff_worktree_enabled(state) and not state.execution_project_root:
+        if self._handoff_worktree_enabled(state) and not state.approved_execution_root:
             return "", ""
         root = Path(state.execution_project_root) if state.execution_project_root else self.root
         relative = state.execution_plan_path or state.plan_path
@@ -540,6 +555,12 @@ class LazyController:
             },
             "finalize_enabled": frozen["finalize"]["enabled"],
             "learning_auto_propose": frozen["learning"]["auto_propose"],
+            "lazy": {
+                "journey_id": state.journey_id,
+                "commit_after_stage": state.commit_after_stage,
+                "execution_project_root": state.execution_project_root,
+                "execution_branch": state.execution_branch,
+            },
             "effective": {
                 "execution": dict(frozen["execution"]),
                 "review": {
@@ -556,7 +577,12 @@ class LazyController:
         }
 
     def _handoff_worktree_enabled(self, state: Any) -> bool:
-        return bool(self._run_requirements(state)["worktree_enabled"])
+        return not state.lazy_worktree and bool(self._run_requirements(state)["worktree_enabled"])
+
+    def _bootstrap_coordinates(self, state: Any) -> tuple[str, str]:
+        branch = f"phasemill/lazy-{state.journey_id}"
+        root = (self.root.parent / f".{self.root.name}-phasemill-worktrees" / branch).resolve()
+        return str(root), branch
 
     def next_action(self) -> LazyAction:
         for _ in range(4):
@@ -576,7 +602,39 @@ class LazyController:
                     approved_execution_root=state.approved_execution_root,
                     approved_branch=state.approved_branch,
                     approved_plan_path=state.approved_plan_path,
+                    origin_project_root=str(self.root),
+                    origin_head=state.origin_head,
+                    execution_project_root=state.execution_project_root,
+                    execution_branch=state.execution_branch,
+                    commit_after_stage=state.commit_after_stage,
                     reason=f"Resume {state.preserved_phase} after one scoped answer.",
+                )
+            if state.phase == "bootstrap-worktree":
+                execution_root, branch = self._bootstrap_coordinates(state)
+                return LazyAction(
+                    action_id=self._action_id(state, "worktree"),
+                    kind="worktree",
+                    phase=state.phase,
+                    expected_revision=state.revision,
+                    origin_project_root=str(self.root),
+                    origin_head=state.origin_head,
+                    execution_project_root=execution_root,
+                    execution_branch=branch,
+                    commit_after_stage=state.commit_after_stage,
+                    reason="Create or reuse the deterministic plan-independent lazy worktree.",
+                )
+            if state.phase == "bootstrap-config":
+                return LazyAction(
+                    action_id=self._action_id(state, "bootstrap-config"),
+                    kind="bootstrap-config",
+                    phase=state.phase,
+                    expected_revision=state.revision,
+                    origin_project_root=str(self.root),
+                    origin_head=state.origin_head,
+                    execution_project_root=state.execution_project_root,
+                    execution_branch=state.execution_branch,
+                    commit_after_stage=state.commit_after_stage,
+                    reason="Ensure project-owned external-review consent before discovery.",
                 )
             if state.phase == "plan" and not state.plan_path:
                 state = self.store.update(state.revision, plan_path=self._plan_candidate(state))
@@ -591,6 +649,11 @@ class LazyController:
                     kind=kind,
                     phase=state.phase,
                     expected_revision=state.revision,
+                    origin_project_root=str(self.root),
+                    origin_head=state.origin_head,
+                    execution_project_root=state.execution_project_root,
+                    execution_branch=state.execution_branch,
+                    commit_after_stage=state.commit_after_stage,
                     iteration=state.plan_review_iteration + 1 if state.phase == "plan-review" else 1,
                     prompt_name=name,
                     prompt=self._render(name, state),
@@ -628,6 +691,10 @@ class LazyController:
                     design_summary=state.design_summary,
                     run_requirements=self._run_requirements(state),
                     execution_project_root=execution_root,
+                    execution_branch=state.execution_branch,
+                    origin_project_root=str(self.root),
+                    origin_head=state.origin_head,
+                    commit_after_stage=state.commit_after_stage,
                     execution_plan_path=execution_plan,
                     matching_run_id=run_id,
                     matching_run_status=run_status,
@@ -635,7 +702,7 @@ class LazyController:
                         "Resume the exact matching existing run; do not start another."
                         if run_id
                         else "Obtain explicit worktree approval and record exact prepared sibling coordinates."
-                        if self._handoff_worktree_enabled(state) and not state.execution_project_root
+                        if self._handoff_worktree_enabled(state) and not state.approved_execution_root
                         else "Start the existing Phasemill run protocol for this validated plan."
                     ),
                 )
@@ -718,7 +785,7 @@ class LazyController:
         )
 
     def _new_dirty_overlap(self, state: Any) -> tuple[tuple[str, ...], GitSnapshot]:
-        snapshot = _git_snapshot(self.root)
+        snapshot = _git_snapshot(self._execution_root(state))
         baseline_digests = {
             item["path"]: item["digest"] for item in state.baseline_path_digests
         }
@@ -730,7 +797,7 @@ class LazyController:
         }
         if snapshot.head != state.baseline_head:
             committed = _split_z(
-                bytes(_git(self.root, "diff", "--name-only", "-z", state.baseline_head, snapshot.head))
+                bytes(_git(self._execution_root(state), "diff", "--name-only", "-z", state.baseline_head, snapshot.head))
             )
             changed.update(committed)
         allowed = {state.plan_path} if state.plan_path else set()
@@ -745,7 +812,7 @@ class LazyController:
         preserved_phase: str,
         **changes: Any,
     ) -> None:
-        snapshot = _git_snapshot(self.root)
+        snapshot = _git_snapshot(self._execution_root(state))
         changes.update(
             baseline_head=snapshot.head,
             baseline_fingerprint=snapshot.fingerprint,
@@ -782,6 +849,11 @@ class LazyController:
     ) -> tuple[str, str]:
         recorded_root = state.execution_project_root
         recorded_plan = state.execution_plan_path
+        # An explicitly in-place lazy journey may still request the legacy
+        # standalone-run worktree at handoff. Until that worktree preparation
+        # is recorded, the bootstrap origin root is not an execution lock.
+        if self._handoff_worktree_enabled(state) and not recorded_plan:
+            recorded_root = ""
         if recorded_root and result.execution_project_root:
             if Path(result.execution_project_root).resolve() != Path(recorded_root):
                 raise LazyControllerError("handoff execution root differs from recorded coordinates")
@@ -791,7 +863,15 @@ class LazyController:
         root = Path(root_value).resolve() if root_value else self.root
         plan = recorded_plan or result.execution_plan_path or state.plan_path
         _relative_path(plan, "execution_plan_path")
-        if self._handoff_worktree_enabled(state):
+        if state.lazy_worktree:
+            if root != self._execution_root(state):
+                raise LazyControllerError("handoff execution root differs from early lazy worktree")
+            if result.execution_branch and result.execution_branch != state.execution_branch:
+                raise LazyControllerError("handoff execution branch differs from early lazy worktree")
+            actual_branch = str(_git(root, "branch", "--show-current", text=True)).strip()
+            if actual_branch != state.execution_branch:
+                raise LazyControllerError("early lazy worktree is on an unexpected branch")
+        elif self._handoff_worktree_enabled(state):
             if not state.approved_execution_root:
                 raise LazyControllerError("worktree preparation requires stored approved helper coordinates")
             if Path(state.approved_main_root).resolve() != self.root:
@@ -838,6 +918,32 @@ class LazyController:
         if require_validated_digest and _digest(candidate) != state.plan_digest:
             raise LazyControllerError("execution plan must be an exact copy of the validated plan")
         return str(root), plan
+
+    def _validate_bootstrap_worktree(self, state: Any, result: LazyResult) -> tuple[str, str]:
+        expected_root, expected_branch = self._bootstrap_coordinates(state)
+        root = Path(result.execution_project_root).resolve()
+        if str(root) != expected_root or result.execution_branch != expected_branch:
+            raise LazyControllerError("prepared lazy worktree differs from deterministic coordinates")
+        registered = {
+            Path(line.removeprefix("worktree ")).resolve()
+            for line in str(_git(self.root, "worktree", "list", "--porcelain", text=True)).splitlines()
+            if line.startswith("worktree ")
+        }
+        if root not in registered:
+            raise LazyControllerError("lazy execution root is not a registered origin worktree")
+        if str(_git(root, "branch", "--show-current", text=True)).strip() != expected_branch:
+            raise LazyControllerError("lazy execution worktree branch mismatch")
+        actual_head = str(_git(root, "rev-parse", "HEAD", text=True)).strip()
+        if actual_head != state.origin_head:
+            raise LazyControllerError("lazy execution worktree advanced before bootstrap was recorded")
+        if subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", state.origin_head, "HEAD"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0:
+            raise LazyControllerError("lazy execution worktree diverges from recorded origin HEAD")
+        return str(root), expected_branch
 
     def _validate_result_fields(self, kind: str, result: LazyResult) -> None:
         populated = {
@@ -886,6 +992,12 @@ class LazyController:
                     raise LazyControllerError("worktree approval requires exact planned coordinates")
         elif result.outcome == "answered":
             allowed = {"answer", "decision"}
+        elif kind == "worktree" and result.outcome == "completed":
+            allowed = {"execution_project_root", "execution_branch"}
+            if not result.execution_project_root or not result.execution_branch:
+                raise LazyControllerError("worktree completion requires exact root and branch")
+        elif kind == "bootstrap-config" and result.outcome == "completed":
+            pass
         elif kind == "discovery" and result.outcome == "completed":
             allowed = {"scope_paths"}
             if not result.summary.strip():
@@ -941,10 +1053,14 @@ class LazyController:
         state = self.store.load()
         if state.status in {"completed", "failed"}:
             raise LazyControllerError(f"cannot record a result for {state.status} lazy journey")
-        kind = "input" if state.status == "waiting-input" else state.phase
+        kind = "input" if state.status == "waiting-input" else (
+            "worktree" if state.phase == "bootstrap-worktree" else state.phase
+        )
         self._validate_action(state, action_id, kind)
         allowed = {
             "input": {"answered"},
+            "worktree": {"completed", "needs-input", "failed", "timed-out"},
+            "bootstrap-config": {"completed", "needs-input", "failed", "timed-out"},
             "discovery": {"completed", "needs-input", "failed", "timed-out"},
             "design": {"completed", "needs-input", "failed", "timed-out"},
             "plan": {"completed", "needs-input", "failed", "timed-out"},
@@ -961,6 +1077,7 @@ class LazyController:
         digest = ""
         execution: tuple[str, str] | None = None
         matching: tuple[str, str] | None = None
+        bootstrap: tuple[str, str] | None = None
         if kind == "input" and state.pending_gate == "dirty-overlap":
             overlap, snapshot = self._new_dirty_overlap(state)
             if overlap:
@@ -971,8 +1088,10 @@ class LazyController:
                     preserved_phase=state.preserved_phase,
                 )
                 return self.next_action()
+        elif state.phase == "bootstrap-worktree" and result.outcome == "completed":
+            bootstrap = self._validate_bootstrap_worktree(state, result)
         elif state.phase == "discovery" and result.outcome == "completed":
-            snapshot = _git_snapshot(self.root)
+            snapshot = _git_snapshot(self._execution_root(state))
             overlap = self._path_overlap(snapshot.dirty_paths, result.scope_paths)
         elif state.phase == "plan" and result.outcome == "completed":
             digest = self._validate_plan_file(state, result)
@@ -997,7 +1116,7 @@ class LazyController:
                     raise LazyControllerError(
                         f"linked run is {matching[1]}, not {result.run_outcome}"
                     )
-            elif state.execution_project_root:
+            elif state.execution_plan_path:
                 raise LazyControllerError("handoff preparation is already recorded")
 
         # Append only accepted results, but do so before the state transition so
@@ -1032,7 +1151,17 @@ class LazyController:
         if result.outcome in {"failed", "timed-out"}:
             self._finish_failed(state, f"{state.phase} {result.outcome}: {result.summary}")
             return self.next_action()
-        if state.phase == "discovery":
+        if state.phase == "bootstrap-worktree":
+            assert bootstrap is not None
+            self.store.update(
+                state.revision,
+                phase="bootstrap-config",
+                execution_project_root=bootstrap[0],
+                execution_branch=bootstrap[1],
+            )
+        elif state.phase == "bootstrap-config":
+            self.store.update(state.revision, phase="discovery")
+        elif state.phase == "discovery":
             assert snapshot is not None
             if overlap:
                 self._pause_for_overlap(
@@ -1136,6 +1265,27 @@ def _load_effective(args: argparse.Namespace) -> Any:
     )
 
 
+def _load_store_effective(args: argparse.Namespace, store: Any) -> Any:
+    state = store.load()
+    root = Path(state.execution_project_root) if state.execution_project_root else args.project_root
+    return PLANNING_CONFIG.load_effective(
+        project_root=root,
+        plugin_data=args.plugin_data,
+        overrides=args.overrides,
+        touched_files=args.touched_files,
+    )
+
+
+def _main_worktree_root(root: Path) -> Path:
+    output = str(_git(root.resolve(), "worktree", "list", "--porcelain", text=True))
+    first = next(
+        (line.removeprefix("worktree ") for line in output.splitlines() if line.startswith("worktree ")),
+        "",
+    )
+    candidate = Path(first).resolve() if first else root.resolve()
+    return candidate if candidate.is_dir() else root.resolve()
+
+
 def _load_record_input(args: argparse.Namespace) -> dict[str, Any]:
     if args.result_file is not None:
         raw = args.result_file.read_text(encoding="utf-8")
@@ -1182,6 +1332,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "start":
+            args.project_root = _main_worktree_root(args.project_root)
             controller, _ = LazyController.start(
                 args.project_root,
                 _load_effective(args),
@@ -1190,6 +1341,7 @@ def main() -> int:
             )
             payload: Any = asdict(controller.next_action())
         elif args.command == "status":
+            args.project_root = _main_worktree_root(args.project_root)
             if args.journey_id:
                 state = LAZY_STATE.LazyStateStore(args.project_root, args.journey_id).load()
                 payload = {"state": asdict(state)}
@@ -1199,8 +1351,9 @@ def main() -> int:
                     "recent": [asdict(state) for state in LAZY_STATE.discover_journeys(args.project_root, limit=20)],
                 }
         else:
+            args.project_root = _main_worktree_root(args.project_root)
             store = LAZY_STATE.LazyStateStore(args.project_root, args.journey_id)
-            controller = LazyController(store, _load_effective(args))
+            controller = LazyController(store, _load_store_effective(args, store))
             if args.command == "next":
                 action = controller.next_action()
             else:

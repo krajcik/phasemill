@@ -230,7 +230,9 @@ def assert_mutation_guards(installed: dict[str, Path]) -> None:
         ),
         root / "skills/lazy/SKILL.md": (
             "plan_write_mode=create-exclusive",
-            "Commit, push, release, publish, deploy, worktree cleanup",
+            "worktree.sh lazy-plan",
+            "lazy-stage.py checkpoint",
+            "never push",
             "never start a second run",
             "never applies `.codex/phasemill/`",
         ),
@@ -363,19 +365,23 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     phasemill = installed["phasemill"]
     fixture = root / "lazy-fixture"
     init_repo(fixture, plan_name="20260715-existing.md")
-    config_dir = fixture / ".codex/phasemill"
-    config_dir.mkdir(parents=True)
-    (config_dir / "config.toml").write_text(
+    origin_config = fixture / ".codex/phasemill/config.toml"
+    origin_config.parent.mkdir(parents=True)
+    origin_config.write_text(
         "[review.external]\nbackend = \"none\"\n\n"
-        "[finalize]\nenabled = false\n\n"
         "[plans]\nmove_on_completion = false\n",
         encoding="utf-8",
     )
-
+    git(fixture, "add", ".codex/phasemill/config.toml")
+    git(fixture, "commit", "-m", "lazy fixture config")
+    remote = root / "lazy-remote.git"
+    run(["git", "init", "--bare", remote])
+    git(fixture, "remote", "add", "origin", str(remote))
     lazy = phasemill / "engine/lazy_controller.py"
+    worktree_helper = phasemill / "scripts/worktree.sh"
+    stage_helper = phasemill / "scripts/lazy-stage.py"
     run_controller = phasemill / "engine/phase_controller.py"
     lazy_base = [sys.executable, lazy, "--project-root", fixture]
-    run_base = [sys.executable, run_controller, "--project-root", fixture, "--default-branch", "main"]
     head_before = git(fixture, "rev-parse", "HEAD")
     branch_before = git(fixture, "branch", "--show-current")
 
@@ -389,8 +395,8 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
             "Add a retry result fixture",
         ]
     )
-    if action.get("kind") != "discovery":
-        raise SmokeError(f"lazy journey did not start in discovery: {action}")
+    if action.get("kind") != "worktree":
+        raise SmokeError(f"lazy journey did not start with early worktree: {action}")
     replay = run_json(
         [
             *lazy_base,
@@ -405,6 +411,40 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
         raise SmokeError("lost lazy_start response did not replay the same action")
     journey_id = str(action["action_id"]).split(":", 1)[0]
 
+    prepared = parse_kv(
+        run(
+            [
+                worktree_helper,
+                "lazy-prepare",
+                "--repo",
+                fixture,
+                "--journey-id",
+                journey_id,
+                "--head",
+                str(action["origin_head"]),
+            ]
+        ).stdout
+    )
+    execution = Path(prepared["project_root"])
+    if prepared.get("status") != "created" or not execution.is_dir():
+        raise SmokeError(f"lazy early worktree was not created: {prepared}")
+    reused = parse_kv(
+        run(
+            [
+                worktree_helper,
+                "lazy-prepare",
+                "--repo",
+                fixture,
+                "--journey-id",
+                journey_id,
+                "--head",
+                str(action["origin_head"]),
+            ]
+        ).stdout
+    )
+    if reused.get("status") != "reused" or Path(reused["project_root"]) != execution:
+        raise SmokeError("lazy worktree replay did not reuse exact coordinates")
+
     def lazy_record(result: dict[str, Any]) -> dict[str, Any]:
         nonlocal action
         action = run_json(
@@ -412,6 +452,56 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
             input_text=json.dumps(result),
         )
         return action
+
+    def checkpoint(action_id: str, base_head: str, message: str, *paths: str) -> dict[str, Any]:
+        command = [
+            sys.executable,
+            stage_helper,
+            "checkpoint",
+            "--project-root",
+            execution,
+            "--action-id",
+            action_id,
+            "--message",
+            message,
+            "--expected-head",
+            base_head,
+        ]
+        for path in paths:
+            command.extend(["--path", path])
+        return run_json(command)
+
+    lazy_record(
+        {
+            "outcome": "completed",
+            "execution_project_root": str(execution),
+            "execution_branch": prepared["branch"],
+        }
+    )
+    if action.get("kind") != "bootstrap-config":
+        raise SmokeError(f"lazy worktree did not advance to config bootstrap: {action}")
+    config_action = str(action["action_id"])
+    config_head = git(execution, "rev-parse", "HEAD")
+    consent = run_json([sys.executable, stage_helper, "consent", "--project-root", execution])
+    if consent.get("status") != "updated":
+        raise SmokeError(f"lazy consent was not bootstrapped: {consent}")
+    config_commit = checkpoint(
+        config_action,
+        config_head,
+        "chore(phasemill): initialize lazy workflow",
+        ".codex/phasemill/config.toml",
+    )
+    if config_commit.get("status") != "committed":
+        raise SmokeError(f"lazy config stage did not commit: {config_commit}")
+    replayed = checkpoint(
+        config_action,
+        config_head,
+        "chore(phasemill): initialize lazy workflow",
+        ".codex/phasemill/config.toml",
+    )
+    if replayed.get("status") != "reused" or replayed.get("head") != config_commit.get("head"):
+        raise SmokeError("lazy config crash replay created or selected another commit")
+    lazy_record({"outcome": "completed", "summary": "installed consent bootstrap complete"})
 
     lazy_record(
         {
@@ -423,29 +513,15 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     if action.get("kind") != "design":
         raise SmokeError(f"lazy discovery did not advance to design: {action}")
 
-    lazy_record(
-        {
-            "outcome": "needs-input",
-            "question": "Preserve the existing retry result format?",
-            "options": ["Preserve it", "Stop"],
-            "gate": "material-design",
-        }
-    )
-    if action.get("kind") != "input":
-        raise SmokeError(f"lazy input was not persisted: {action}")
-    resumed_input = run_json([*lazy_base, "next", journey_id])
-    if resumed_input.get("action_id") != action.get("action_id"):
-        raise SmokeError("waiting lazy input did not resume the same action")
-    lazy_record({"outcome": "answered", "answer": "Preserve it", "decision": "continue"})
-    if action.get("kind") != "design":
-        raise SmokeError(f"lazy input did not resume the preserved phase: {action}")
     lazy_record({"outcome": "completed", "summary": "conservative design selected"})
     if action.get("kind") != "plan" or action.get("plan_write_mode") != "create-exclusive":
         raise SmokeError(f"lazy design did not reserve an exclusive plan: {action}")
     if "Lazy authorization override" not in action.get("prompt", ""):
         raise SmokeError("lazy plan prompt did not supersede only the acceptance pause")
 
-    plan = fixture / str(action["plan_path"])
+    plan = execution / str(action["plan_path"])
+    plan_action = str(action["action_id"])
+    plan_head = git(execution, "rev-parse", "HEAD")
     plan.parent.mkdir(parents=True, exist_ok=True)
     with plan.open("x", encoding="utf-8") as output:
         output.write(
@@ -454,6 +530,14 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
             "- [ ] create `lazy-result.txt`\n"
             "- [ ] validate installed lazy behavior\n"
         )
+    plan_commit = checkpoint(
+        plan_action,
+        plan_head,
+        "docs(phasemill): create implementation plan",
+        str(action["plan_path"]),
+    )
+    if plan_commit.get("status") != "committed":
+        raise SmokeError(f"lazy plan was not checkpointed: {plan_commit}")
     digest = hashlib.sha256(plan.read_bytes()).hexdigest()
     lazy_record(
         {
@@ -475,12 +559,22 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     lazy_record({"outcome": "findings", "findings": [finding]})
     if action.get("kind") != "plan-fix":
         raise SmokeError(f"lazy findings did not enter plan fix: {action}")
+    fix_action = str(action["action_id"])
+    fix_head = git(execution, "rev-parse", "HEAD")
     previous_digest = str(action["plan_digest"])
     plan.write_text(
         plan.read_text(encoding="utf-8")
         + "\nValidation: `test -f lazy-result.txt`.\n",
         encoding="utf-8",
     )
+    fix_commit = checkpoint(
+        fix_action,
+        fix_head,
+        "docs(phasemill): address plan review",
+        str(action["plan_path"]),
+    )
+    if fix_commit.get("status") != "committed":
+        raise SmokeError(f"lazy plan fix was not checkpointed: {fix_commit}")
     fixed_digest = hashlib.sha256(plan.read_bytes()).hexdigest()
     lazy_record(
         {
@@ -496,6 +590,7 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     if action.get("kind") != "handoff" or action.get("matching_run_id"):
         raise SmokeError(f"lazy clean plan did not reach empty handoff: {action}")
 
+    run_base = [sys.executable, run_controller, "--project-root", execution, "--default-branch", "main"]
     run_action = run_json([*run_base, "start", plan])
     if run_action.get("kind") != "task":
         raise SmokeError(f"synthetic exact run did not start: {run_action}")
@@ -504,8 +599,19 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     if matching.get("matching_run_id") != run_id or matching.get("action_id") != action.get("action_id"):
         raise SmokeError("lazy handoff did not discover the crash-window exact run")
 
-    (fixture / "lazy-result.txt").write_text("installed lazy pipeline passed\n", encoding="utf-8")
+    task_action = str(run_action["action_id"])
+    task_head = git(execution, "rev-parse", "HEAD")
+    (execution / "lazy-result.txt").write_text("installed lazy pipeline passed\n", encoding="utf-8")
     plan.write_text(plan.read_text(encoding="utf-8").replace("- [ ]", "- [x]"), encoding="utf-8")
+    task_commit = checkpoint(
+        task_action,
+        task_head,
+        "chore(phasemill): complete task",
+        "lazy-result.txt",
+        str(plan.relative_to(execution)),
+    )
+    if task_commit.get("status") != "committed":
+        raise SmokeError(f"lazy implementation stage was not committed: {task_commit}")
     run_action = run_json(
         [*run_base, "record", plan, "--action-id", str(run_action["action_id"])],
         input_text=json.dumps({"outcome": "completed", "summary": "synthetic implementation complete"}),
@@ -530,8 +636,9 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
         {
             "outcome": "completed",
             "linked_run_id": run_id,
-            "execution_project_root": str(fixture),
+            "execution_project_root": str(execution),
             "execution_plan_path": str(action["execution_plan_path"]),
+            "execution_branch": prepared["branch"],
             "run_outcome": "completed",
         }
     )
@@ -541,19 +648,32 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     if lazy_status.get("status") != "completed" or lazy_status.get("linked_run_id") != run_id:
         raise SmokeError(f"lazy terminal state is invalid: {lazy_status}")
 
-    unexpected_scope_writes = [
-        path for path in config_dir.rglob("*") if path.is_file() and path.name != "config.toml"
-    ]
+    config_dir = execution / ".codex/phasemill"
+    unexpected_scope_writes = [path for path in config_dir.rglob("*") if path.is_file() and path.name != "config.toml"]
     if unexpected_scope_writes:
         raise SmokeError(f"lazy proposal-only learning mutated project scope: {unexpected_scope_writes}")
-    if ".phasemill/runs" in git(fixture, "status", "--porcelain=v1", "--untracked-files=all"):
+    if ".phasemill/runs" in git(execution, "status", "--porcelain=v1", "--untracked-files=all"):
         raise SmokeError("lazy runtime state polluted Git status")
     if git(fixture, "rev-parse", "HEAD") != head_before:
-        raise SmokeError("lazy pipeline created a commit without approval")
+        raise SmokeError("lazy pipeline changed origin HEAD")
     if git(fixture, "branch", "--show-current") != branch_before:
         raise SmokeError("lazy pipeline changed the main branch")
-    if git(fixture, "remote"):
-        raise SmokeError("lazy fixture unexpectedly gained a remote")
+    if int(git(execution, "rev-list", "--count", f"{head_before}..HEAD")) < 4:
+        raise SmokeError("lazy pipeline did not create per-stage commits")
+    messages = git(execution, "log", "--format=%B", f"{head_before}..HEAD")
+    if messages.count("Phasemill-Action:") < 4:
+        raise SmokeError("lazy stage commits lost their stable action trailers")
+    config_text = (config_dir / "config.toml").read_text(encoding="utf-8")
+    if "data_sharing_approved = true" not in config_text:
+        raise SmokeError("lazy project consent is not durable")
+    remote_refs = subprocess.run(
+        ["git", f"--git-dir={remote}", "show-ref"],
+        text=True,
+        capture_output=True,
+        check=False,
+    ).stdout.strip()
+    if remote_refs:
+        raise SmokeError("lazy pipeline pushed a ref despite its local-only contract")
 
 
 def parse_kv(output: str) -> dict[str, str]:

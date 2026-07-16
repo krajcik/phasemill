@@ -6,9 +6,9 @@ description: Autonomously take an idea through durable discovery, design, plan c
 # Lazy end-to-end workflow
 
 Drive one idea through the durable Phasemill preparation controller and then
-the existing run controller. Proceed automatically through reversible local
-work. Stop only at a controller terminal action or an explicit input,
-permission, consent, worktree, retry, or external-mutation gate.
+the existing run controller. A new journey creates one deterministic worktree
+before project-file mutation and makes local commits after mutation-bearing
+stages. Proceed automatically through reversible local work and never push.
 
 ## Resolve the installed boundary
 
@@ -55,9 +55,10 @@ their journey id, phase, plan, and update time and ask the user to choose. If
 none is active, report that fact; do not call `lazy_start` without a new idea.
 Then call `lazy_next` for the selected journey.
 
-The journey remains anchored in its recorded origin repository. Resume it
-from that origin. An execution worktree contains only its implementation run;
-do not copy or migrate lazy state into it.
+The journey remains anchored in its recorded origin repository while every
+project mutation uses the recorded execution root. Resume it from the origin,
+or route an execution-worktree resume through the registered Git common
+directory. Never copy or reconstruct lazy state.
 
 ## Drive the exact action protocol
 
@@ -75,9 +76,36 @@ For each returned action:
 5. Stop at `done`, `failed`, or `input`. Never guess past a failed record or a
    stale revision.
 
+When the durable action/state has `commit_after_stage=true`, record `HEAD`
+before every mutation-bearing action and invoke the packaged
+`../../scripts/lazy-stage.py checkpoint` before controller `record`,
+using the exact stable action id, deterministic message, expected pre-action
+HEAD, and one `--path` per verified changed path. The helper excludes runtime
+state, rejects unrelated dirt, creates no empty commit, and adds
+`Phasemill-Action: <action-id>`. A replay after commit but before `record` must
+reuse that exact commit; recover the original expected HEAD from its
+`Phasemill-Base` trailer and never create a second commit manually.
+
 Record `timed-out` when a bounded action exceeds its deadline. Record `failed`
 for a non-recoverable local failure. Use `needs-input` only with one concrete
 question, a known gate, and two or three choices when choices are natural.
+
+### Early worktree and consent bootstrap
+
+For `kind=worktree`, the explicit `$lazy` invocation authorizes calling
+packaged `../../scripts/worktree.sh lazy-plan` and `lazy-prepare` with the
+returned origin, journey id, and recorded HEAD. Do not pause for another
+worktree approval. Verify and record the exact returned root and branch;
+repeated preparation must reuse them. A dirty or drifted origin is an ambiguity
+gate and its changes must never be copied into the worktree.
+
+For `kind=bootstrap-config`, run packaged `../../scripts/lazy-stage.py consent`
+in the execution root. It safely ensures
+`.codex/phasemill/config.toml` contains
+`[review.external] data_sharing_approved = true` while preserving valid existing
+content. When `commit_after_stage=true`, checkpoint only that path with message
+`chore(phasemill): initialize lazy workflow`, then record completion. This
+project-owned setting is durable Pi data-sharing approval for the project.
 
 ### Discovery
 
@@ -117,8 +145,9 @@ Follow the rendered effective make-plan guidance and active planning rules,
 including executable `### Task N:` or `### Iteration N:` sections. The lazy
 prompt supersedes only draft presentation and plan-acceptance waiting: create
 the complete local plan without a separate acceptance pause. Do not touch
-implementation files. After writing, reread it, compute the SHA-256 digest,
-and record exact `plan_path` and `plan_digest`.
+implementation files. When `commit_after_stage=true`, checkpoint only the plan with message
+`docs(phasemill): create implementation plan`, reread it, compute the SHA-256
+digest, and record exact `plan_path` and `plan_digest`.
 
 ### Plan review and correction
 
@@ -139,6 +168,8 @@ finding remains; otherwise record typed `findings`.
 
 For `kind=plan-fix`, edit only the reserved plan, apply only verified findings,
 preserve intent and executable structure, and re-read the whole document.
+When `commit_after_stage=true`, checkpoint only the plan with message
+`docs(phasemill): address plan review` before recording the result.
 Bind the result to the action's old digest using `previous_plan_digest`, then
 record the same `plan_path` and the new SHA-256 `plan_digest`. Every fix returns
 to review; never bypass the configured convergence limit.
@@ -157,41 +188,24 @@ Pause with `needs-input` before:
 
 - a material design choice or overlapping dirty scope;
 - any new sandbox, network, or write permission;
-- `worktree.sh prepare` and every worktree creation;
-- Pi data sharing when effective consent is absent;
 - continuing after exhausted task or plan-review retries;
-- commit, amend, rebase, push, pull request, release, publish, deploy, database,
+- amend, rebase, push, pull request, release, publish, deploy, database,
   infrastructure, or other external mutation;
 - applying any learning proposal locally or globally.
 
 Normal Codex policy remains authoritative. Config cannot widen permissions.
-Commit, push, release, publish, deploy, worktree cleanup, and application of
-learning proposals remain outside `$lazy` even after an answer; report them as
-separate possible follow-ups instead of performing them implicitly.
+Push, release, publish, deploy, worktree cleanup, and application of learning
+proposals remain outside `$lazy`. The only implicit Git mutations are its early
+worktree and trailer-bound local stage commits.
 
 ## Handoff to the existing run
 
 For `kind=handoff`, first use the action's recorded origin, execution root,
 plan path, digest, and `matching_run_id`. Never infer a worktree path.
 
-If worktree mode is enabled and no execution coordinates are registered:
-
-1. call packaged `../../scripts/worktree.sh plan` read-only;
-2. present its exact branch, root, worktree, and plan values;
-3. record `needs-input` with gate `worktree-approval`, exact
-   `approved_main_root`, `approved_execution_root`, `approved_branch`, and
-   repository-relative `approved_plan_path`, then obtain explicit approval;
-4. in the resumed current permission context call `worktree.sh prepare`;
-5. verify its returned `main_root`, `project_root`, absolute `plan_path`, branch,
-   and plan digest; convert that exact absolute plan path to its confined
-   repository-relative path under the returned `project_root`, then record the
-   execution root, relative plan path, and `execution_branch` as a completed
-   preparation result without a run id. They must exactly match the durable
-   approved helper coordinates; another registered worktree is not acceptable.
-
-Do not run raw `git worktree add`, move the origin branch, or remove a worktree.
-If preparation is interrupted before coordinates are recorded, inspect and
-reuse the deterministic registered worktree; never create another.
+The execution root and branch must already be registered by early bootstrap.
+Do not create a second or nested worktree at handoff. Do not run raw
+`git worktree add`, move the origin branch, or remove a worktree.
 
 Before `run_start`, query `lazy_next` again and call `run_status` for the exact
 execution plan. If the handoff action has a `matching_run_id`, or a plan-keyed
@@ -209,6 +223,14 @@ and Pi consent gates. The
 run controller remains sole owner of task, code review, Pi, finalize, retry,
 and proposal-only learning transitions.
 
+While driving the linked run, call the same checkpoint helper before
+`run_record` whenever a task, confirmed native/Pi review fix, or finalize action
+leaves Git-visible changes. Pass only paths verified against that action's
+diff. Clean reviews and proposal-only learning create no commit. Use message
+`chore(phasemill): complete <phase>` and the exact run action id. This exception
+applies only to a run linked from a lazy journey whose durable
+`commit_after_stage` is true; standalone `$run` never inherits it.
+
 When the linked run reaches terminal state, call `lazy_record` once with its
 exact `linked_run_id`, registered `execution_project_root`,
 `execution_plan_path`, and `run_outcome`. Record no implementation phase details
@@ -222,8 +244,11 @@ At terminal `done`, report the plan, implementation run id, execution root,
 validation, remaining dirty changes, and any proposal-only learning candidates.
 After recording lazy terminal success, honor the existing run contract for
 `values.plans.move_on_completion`: move only its active execution plan and
-report the new path. In worktree mode never move or delete the copied plan's
-origin-worktree source. Do not commit, push, publish, deploy, delete a plan, or
-remove the worktree as part of lazy completion. At terminal `failed`, report
+report the new path. When that move is Git-visible and `commit_after_stage` is
+true, checkpoint the verified old/new plan paths with the terminal lazy action
+id and message `docs(phasemill): complete implementation plan`; an ignored or
+empty move is a no-op. In worktree mode never move or delete the copied plan's
+origin-worktree source. Do not push, publish, deploy, delete a plan, or remove
+the worktree as part of lazy completion. At terminal `failed`, report
 the controller reason and exact resume or recovery boundary without inventing
 a successful outcome.

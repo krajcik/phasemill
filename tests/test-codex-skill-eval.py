@@ -179,6 +179,44 @@ class CodexSkillEvalTests(unittest.TestCase):
             self.assertIn("advisory only", context)
             self.assertIn("never advances or repairs", context)
 
+    def test_session_start_from_registered_worktree_reads_origin_lazy_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Hook Test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "hook@example.invalid"], cwd=root, check=True)
+            (root / "README.md").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=root, check=True)
+            worktree = Path(directory) / "execution"
+            subprocess.run(
+                ["git", "worktree", "add", "-q", "-b", "lazy-execution", str(worktree)],
+                cwd=root,
+                check=True,
+            )
+            lazy = root / ".phasemill/runs/lazy-origin-active"
+            lazy.mkdir(parents=True)
+            (lazy / "state.json").write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "journey_id": "origin-active",
+                        "phase": "plan",
+                        "revision": 4,
+                        "plan_path": "docs/plans/lazy.md",
+                        "linked_run_id": "",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = invoke_runtime(
+                json.dumps({"hook_event_name": "SessionStart", "cwd": str(worktree)})
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("journey=origin-active", context)
+
     def test_session_start_tolerates_corrupted_lazy_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

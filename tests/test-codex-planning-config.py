@@ -71,6 +71,21 @@ class PlanningConfigTests(unittest.TestCase):
         self.assertEqual(0, config.values["execution"]["task_retries"])
         self.assertEqual("invocation", config.origins["execution.task_retries"])
 
+    def test_lazy_policy_defaults_are_isolated_from_standalone_worktree(self) -> None:
+        config = self.load()
+        self.assertTrue(config.values["lazy"]["worktree"])
+        self.assertTrue(config.values["lazy"]["commit_after_stage"])
+        self.assertFalse(config.values["worktree"]["enabled"])
+
+        self.write(
+            self.custom / "config.toml",
+            "[lazy]\nworktree = false\ncommit_after_stage = false\n",
+        )
+        overridden = self.load()
+        self.assertFalse(overridden.values["lazy"]["worktree"])
+        self.assertFalse(overridden.values["lazy"]["commit_after_stage"])
+        self.assertFalse(overridden.values["worktree"]["enabled"])
+
     def test_prompt_is_replaced_as_a_complete_file(self) -> None:
         self.write(self.user / "prompts/task.md", "user task body\n")
         self.write(self.custom / "prompts/task.md", "project task body\n")

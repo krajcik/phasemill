@@ -4,6 +4,13 @@
 
 ### New features
 
+- make `$lazy` create one deterministic worktree before project mutation,
+  bootstrap project-owned Pi consent on first use, and create replay-safe local
+  commits after every mutation-bearing stage without ever pushing
+- add `[lazy] worktree` and `commit_after_stage` project overrides while
+  preserving standalone `$run` worktree and commit behavior
+- resume the same origin-owned lazy journey from either the main repository or
+  its registered execution worktree
 - add `$lazy` for a durable autonomous journey from an idea through discovery,
   design, exclusive planning, bounded plan review/fix, normal execution, and
   proposal-only learning
@@ -14,6 +21,11 @@
 
 ### Safety
 
+- bind lazy commits to stable action ids with `Phasemill-Action` trailers,
+  reject unrelated dirty paths or HEAD drift, reuse commits after a
+  commit-before-record crash, and avoid empty commits
+- preserve valid project TOML comments and layout while enabling external-review
+  consent, and refuse malformed or schema-invalid configuration without writes
 - preserve accepted dirty-overlap answers in the durable progress log when
   repository drift forces the input gate to refresh
 - run Pi/GLM review at `high` reasoning and append a fixed 40-tool budget that

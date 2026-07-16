@@ -28,9 +28,9 @@ that workflow calls `run_next` from the stored revision. Never call
 `lazy_start` or `run_start` merely to inspect status.
 
 Inside a registered execution worktree, lazy state intentionally remains in
-the recorded origin repository. Report run-only status there and say that the
-parent lazy journey must be inspected or resumed from its origin; do not copy,
-migrate, or reconstruct the journey from the run state.
+the main/origin worktree. The MCP and CLI adapters resolve that origin through
+the registered Git worktree list, so report and resume the same parent journey
+from either location. Do not copy, migrate, or reconstruct it from run state.
 
 If MCP is unavailable, resolve `../../engine/lazy_controller.py` and
 `../../engine/plan_state.py` relative to this skill. Use lazy `status` and

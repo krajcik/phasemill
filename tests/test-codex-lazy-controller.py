@@ -63,8 +63,11 @@ class LazyStateTests(unittest.TestCase):
     def test_initialization_is_confined_versioned_and_mode_safe(self) -> None:
         store, state, created = self.start()
         self.assertTrue(created)
-        self.assertEqual(1, state.version)
-        self.assertEqual("discovery", state.phase)
+        self.assertEqual(2, state.version)
+        self.assertEqual("bootstrap-config", state.phase)
+        self.assertFalse(state.lazy_worktree)
+        self.assertFalse(state.commit_after_stage)
+        self.assertEqual(str(self.root), state.execution_project_root)
         self.assertEqual("running", state.status)
         self.assertEqual(0, state.revision)
         self.assertEqual(
@@ -102,7 +105,11 @@ class LazyControllerTests(unittest.TestCase):
             custom = self.root / ".codex/phasemill/config.toml"
             custom.parent.mkdir(parents=True, exist_ok=True)
             custom.write_text(body, encoding="utf-8")
-        return CONFIG.load_effective(project_root=self.root, plugin_data=self.user)
+        return CONFIG.load_effective(
+            project_root=self.root,
+            plugin_data=self.user,
+            overrides=["lazy.worktree=false"],
+        )
 
     def start(self, request_id: str = "controller-request", config=None):
         controller, created = CONTROLLER.LazyController.start(
@@ -111,7 +118,13 @@ class LazyControllerTests(unittest.TestCase):
             request_id=request_id,
             idea="Add bounded retries",
         )
-        return controller, controller.next_action(), created
+        action = controller.next_action()
+        if action.kind == "bootstrap-config":
+            action = controller.record_result(
+                action.action_id,
+                CONTROLLER.LazyResult(outcome="completed", summary="legacy in-place bootstrap"),
+            )
+        return controller, action, created
 
     def record(self, controller, action, **value):
         return controller.record_result(action.action_id, CONTROLLER.LazyResult.from_mapping(value))
@@ -176,6 +189,158 @@ class LazyControllerTests(unittest.TestCase):
         self.assertIn("Lazy authorization override", rendered)
         self.assertIn("supersede only", rendered)
 
+    def test_default_lazy_bootstraps_worktree_before_discovery_and_keeps_state_in_origin(self) -> None:
+        config = CONFIG.load_effective(project_root=self.root, plugin_data=self.user)
+        controller, created = CONTROLLER.LazyController.start(
+            self.root,
+            config,
+            request_id="early-worktree",
+            idea="Add bounded retries",
+        )
+        self.assertTrue(created)
+        action = controller.next_action()
+        self.assertEqual("worktree", action.kind)
+        self.assertEqual("bootstrap-worktree", action.phase)
+        self.assertEqual("phasemill/lazy-" + controller.store.journey_id, action.execution_branch)
+        self.assertTrue(action.commit_after_stage)
+
+        helper = REPO / "plugins/phasemill/scripts/worktree.sh"
+        subprocess.run(
+            [
+                str(helper),
+                "lazy-prepare",
+                "--repo",
+                str(self.root),
+                "--journey-id",
+                controller.store.journey_id,
+                "--head",
+                action.origin_head,
+            ],
+            cwd=self.root,
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        worktree = Path(action.execution_project_root)
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "-C", str(self.root), "worktree", "remove", "--force", str(worktree)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        )
+        config_action = self.record(
+            controller,
+            action,
+            outcome="completed",
+            execution_project_root=action.execution_project_root,
+            execution_branch=action.execution_branch,
+        )
+        self.assertEqual("bootstrap-config", config_action.kind)
+        discovery = self.record(
+            controller,
+            config_action,
+            outcome="completed",
+            summary="consent ready",
+        )
+        self.assertEqual("discovery", discovery.kind)
+        state = controller.store.load()
+        self.assertEqual(str(self.root), state.origin_project_root)
+        self.assertEqual(action.execution_project_root, state.execution_project_root)
+        self.assertTrue(state.lazy_worktree)
+        self.assertTrue(state.commit_after_stage)
+        self.assertTrue(controller.store.paths.state.is_relative_to(self.root))
+
+    def test_worktree_bootstrap_rejects_an_unrecorded_advanced_head(self) -> None:
+        config = CONFIG.load_effective(project_root=self.root, plugin_data=self.user)
+        controller, _ = CONTROLLER.LazyController.start(
+            self.root,
+            config,
+            request_id="advanced-bootstrap",
+            idea="Reject drift",
+        )
+        action = controller.next_action()
+        helper = REPO / "plugins/phasemill/scripts/worktree.sh"
+        subprocess.run(
+            [
+                str(helper), "lazy-prepare", "--repo", str(self.root),
+                "--journey-id", controller.store.journey_id, "--head", action.origin_head,
+            ],
+            cwd=self.root,
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        worktree = Path(action.execution_project_root)
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "-C", str(self.root), "worktree", "remove", "--force", str(worktree)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        )
+        (worktree / "drift.txt").write_text("drift\n", encoding="utf-8")
+        subprocess.run(["git", "add", "drift.txt"], cwd=worktree, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "unrecorded drift"], cwd=worktree, check=True)
+        with self.assertRaisesRegex(CONTROLLER.LazyControllerError, "advanced before bootstrap"):
+            self.record(
+                controller,
+                action,
+                outcome="completed",
+                execution_project_root=action.execution_project_root,
+                execution_branch=action.execution_branch,
+            )
+
+    def test_commit_after_stage_false_propagates_without_enabling_checkpoints(self) -> None:
+        config = CONFIG.load_effective(
+            project_root=self.root,
+            plugin_data=self.user,
+            overrides=["lazy.worktree=false", "lazy.commit_after_stage=false"],
+        )
+        controller, action, _ = self.start("no-stage-commits", config)
+        self.assertFalse(action.commit_after_stage)
+        design = self.record(
+            controller,
+            action,
+            outcome="completed",
+            summary="scope",
+            scope_paths=["src"],
+        )
+        self.assertFalse(design.commit_after_stage)
+
+    def test_v1_state_migrates_without_acquiring_lazy_mutation_policy(self) -> None:
+        controller, _, _ = self.start("legacy-state")
+        path = controller.store.paths.state
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["version"] = 1
+        for name in (
+            "origin_head",
+            "lazy_worktree",
+            "commit_after_stage",
+            "execution_branch",
+        ):
+            value.pop(name)
+        value["execution_project_root"] = ""
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+        migrated = controller.store.load()
+        self.assertEqual(2, migrated.version)
+        self.assertFalse(migrated.lazy_worktree)
+        self.assertFalse(migrated.commit_after_stage)
+        self.assertEqual(str(self.root), migrated.execution_project_root)
+        action = controller.next_action()
+        self.assertEqual("discovery", action.kind)
+        resumed = self.record(
+            controller,
+            action,
+            outcome="completed",
+            summary="legacy discovery resumed",
+            scope_paths=["src"],
+        )
+        self.assertEqual("design", resumed.kind)
+
     def test_restart_returns_same_action_at_every_preparation_revision(self) -> None:
         controller, action, _ = self.start("restart-everywhere")
         self.assertEqual(action, controller.next_action())
@@ -222,6 +387,54 @@ class LazyControllerTests(unittest.TestCase):
         self.assertEqual(review, controller.next_action())
         handoff = self.record(controller, review, outcome="clean")
         self.assertEqual(handoff, controller.next_action())
+
+    def test_commit_policy_and_execution_coordinates_survive_all_preparation_phases(self) -> None:
+        controller, action, _ = self.start("policy-propagation")
+        expected_root = str(self.root)
+        for current in (action,):
+            self.assertTrue(current.commit_after_stage)
+            self.assertEqual(expected_root, current.execution_project_root)
+        design = self.record(
+            controller,
+            action,
+            outcome="completed",
+            summary="scope",
+            scope_paths=["src"],
+        )
+        self.assertTrue(design.commit_after_stage)
+        plan = self.record(controller, design, outcome="completed", summary="design")
+        self.assertTrue(plan.commit_after_stage)
+        self.assertEqual(expected_root, plan.execution_project_root)
+        digest = self.write_plan(plan)
+        review = self.record(
+            controller,
+            plan,
+            outcome="completed",
+            plan_path=plan.plan_path,
+            plan_digest=digest,
+        )
+        self.assertTrue(review.commit_after_stage)
+        fix = self.record(controller, review, outcome="findings", findings=[self.finding()])
+        self.assertTrue(fix.commit_after_stage)
+        previous = fix.plan_digest
+        digest = self.write_plan(
+            fix,
+            (self.root / fix.plan_path).read_text(encoding="utf-8") + "\nFix.\n",
+            exclusive=False,
+        )
+        review = self.record(
+            controller,
+            fix,
+            outcome="completed",
+            plan_path=fix.plan_path,
+            previous_plan_digest=previous,
+            plan_digest=digest,
+        )
+        handoff = self.record(controller, review, outcome="clean")
+        self.assertTrue(handoff.commit_after_stage)
+        self.assertEqual(expected_root, handoff.execution_project_root)
+        self.assertTrue(handoff.run_requirements["lazy"]["commit_after_stage"])
+        self.assertEqual(controller.store.journey_id, handoff.run_requirements["lazy"]["journey_id"])
 
     def test_two_review_attempts_then_convergence_failure(self) -> None:
         controller, action, _ = self.start()

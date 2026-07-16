@@ -21,10 +21,12 @@ Codex-native, and independent from personal configuration.
   `PLUGIN_DATA` diff requires separate approval.
 - Never launch nested `codex exec` to emulate per-agent model selection. Native
   child agents inherit the root runtime until Codex exposes supported routing.
-- Pi review stays direct, read-only, fixed to `zai/glm-5.2` with `xhigh`, and
+- Pi review stays direct, read-only, fixed to `zai/glm-5.2` with `high`, and
   receives repository context through `read`, `grep`, `find`, and `ls` only.
-- Do not silently commit, push, publish, deploy, create/remove worktrees, or
-  widen permissions.
+- Do not silently push, publish, deploy, remove worktrees, or widen permissions.
+  An explicit `$lazy` invocation is the narrow exception for its deterministic
+  early worktree and replay-safe local stage commits; standalone skills keep
+  their normal approval boundaries.
 
 ## Structure
 

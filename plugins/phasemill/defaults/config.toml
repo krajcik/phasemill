@@ -96,6 +96,8 @@ auto_propose = true
 [lazy]
 max_plan_review_iterations = 2
 plan_review_agents = ["implementation", "quality", "testing"]
+worktree = true
+commit_after_stage = true
 
 [plans]
 directory = "docs/plans"

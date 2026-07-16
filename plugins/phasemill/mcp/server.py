@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping
 
 
 SERVER_NAME = "phasemill"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.3.0"
 LATEST_PROTOCOL = "2025-11-25"
 SUPPORTED_PROTOCOLS = frozenset({LATEST_PROTOCOL, "2025-06-18", "2025-03-26", "2024-11-05"})
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +121,13 @@ def _run_git(project_root: Path, *argv: str) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
+def _main_worktree_root(project_root: Path) -> Path:
+    output = _run_git(project_root, "worktree", "list", "--porcelain")
+    first = next((line.removeprefix("worktree ") for line in output.splitlines() if line.startswith("worktree ")), "")
+    candidate = Path(first).resolve() if first else project_root.resolve()
+    return candidate if candidate.is_dir() else project_root.resolve()
+
+
 def _default_branch(project_root: Path, arguments: Mapping[str, Any]) -> str:
     supplied = _string(arguments, "defaultBranch", required=False).strip()
     if supplied:
@@ -214,6 +221,7 @@ def run_record(arguments: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _lazy_store(project_root: Path, arguments: Mapping[str, Any]) -> Any:
+    project_root = _main_worktree_root(project_root)
     journey_id = _string(arguments, "journeyId", required=False).strip()
     if journey_id:
         return LAZY_STATE.LazyStateStore(project_root, journey_id)
@@ -226,14 +234,17 @@ def _lazy_store(project_root: Path, arguments: Mapping[str, Any]) -> Any:
 
 
 def _lazy_controller(project_root: Path, arguments: Mapping[str, Any]) -> Any:
+    store = _lazy_store(project_root, arguments)
+    state = store.load()
+    config_root = Path(state.execution_project_root) if state.execution_project_root else project_root
     return LAZY_CONTROLLER.LazyController(
-        _lazy_store(project_root, arguments),
-        _load_effective(project_root, arguments),
+        store,
+        _load_effective(config_root, arguments),
     )
 
 
 def lazy_start(arguments: Mapping[str, Any]) -> dict[str, Any]:
-    project_root = _project_root(arguments)
+    project_root = _main_worktree_root(_project_root(arguments))
     controller, created = LAZY_CONTROLLER.LazyController.start(
         project_root,
         _load_effective(project_root, arguments),
@@ -246,7 +257,7 @@ def lazy_start(arguments: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def lazy_status(arguments: Mapping[str, Any]) -> dict[str, Any]:
-    project_root = _project_root(arguments)
+    project_root = _main_worktree_root(_project_root(arguments))
     journey_id = _string(arguments, "journeyId", required=False).strip()
     if journey_id:
         store = LAZY_STATE.LazyStateStore(project_root, journey_id)

@@ -43,12 +43,14 @@ task -> first review -> convergence review -> optional Pi review -> finalize -> 
 The lazy preparation flow is:
 
 ```text
-discovery -> design -> exclusive plan -> bounded plan review/fix -> exact run handoff
+early worktree -> consent checkpoint -> discovery -> design -> exclusive plan
+-> bounded plan review/fix -> exact run handoff
 ```
 
 Lazy actions use the same revision-bound replay contract. Waiting for user
-input preserves the current phase, and the handoff records the exact origin,
-project root, plan digest, and approved worktree context before linking one
+input preserves the current phase. Runtime state stays in the origin while all
+project mutation uses the early execution worktree; handoff records its exact
+root, branch, and plan digest before linking one
 normal run. Restarting across that boundary reuses the matching run instead of
 starting a second one.
 
@@ -57,12 +59,12 @@ automatic learning proposals are config-driven. The engine never edits
 implementation or project-scope files and never treats ephemeral Codex
 `update_plan` state as durable truth.
 
-Lazy mode changes the acceptance gate for its generated plan only. Existing
-external-review consent, retry, finalize, learning, plan-move, and worktree
-settings remain authoritative. Ambiguity, overlapping active work, permission
-changes, external mutations, and exhausted policy limits pause the journey;
-commit, push, release, publish, deploy, worktree cleanup, and learning writes
-always retain their explicit gates.
+Lazy mode additionally owns its deterministic early worktree, project consent
+bootstrap, and local mutation-stage checkpoints. Stable action trailers make a
+commit replay-safe across the commit-before-record crash window. Ambiguity,
+overlapping active work, permission changes, external mutations, and exhausted
+policy limits still pause the journey; push, release, publish, deploy, worktree
+cleanup, and learning writes retain their explicit gates.
 
 The `learning` action runs in the root Codex task because it needs the user's
 current corrective comments. It may inspect only the current run and one

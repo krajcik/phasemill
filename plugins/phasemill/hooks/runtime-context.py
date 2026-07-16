@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 
@@ -60,6 +61,28 @@ def _active_lazy(cwd: Path) -> list[dict[str, Any]]:
     )
 
 
+def _main_worktree(cwd: Path) -> Path:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(cwd), "worktree", "list", "--porcelain"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return cwd
+    if completed.returncode != 0:
+        return cwd
+    first = next(
+        (line.removeprefix("worktree ") for line in completed.stdout.splitlines() if line.startswith("worktree ")),
+        "",
+    )
+    root = Path(first).resolve() if first else cwd
+    return root if root.is_dir() else cwd
+
+
 def main() -> int:
     try:
         event = json.load(sys.stdin)
@@ -71,7 +94,7 @@ def main() -> int:
     if not isinstance(cwd, str) or not cwd:
         return 0
     root = Path(cwd).resolve()
-    lazy = _active_lazy(root)
+    lazy = _active_lazy(_main_worktree(root))
     runs = _active_runs(root)
     if not lazy and not runs:
         return 0

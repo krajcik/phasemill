@@ -164,6 +164,8 @@ SCHEMA: dict[str, Any] = {
     "lazy": {
         "max_plan_review_iterations": FieldSpec("int", 1, 10),
         "plan_review_agents": FieldSpec("string-list", allow_empty=False),
+        "worktree": FieldSpec("bool"),
+        "commit_after_stage": FieldSpec("bool"),
     },
     "plans": {
         "directory": FieldSpec("str", allow_empty=False),

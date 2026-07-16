@@ -76,6 +76,8 @@ Lazy mode has a deliberately small configuration surface:
 [lazy]
 max_plan_review_iterations = 2
 plan_review_agents = ["implementation", "quality", "testing"]
+worktree = true
+commit_after_stage = true
 ```
 
 Every configured lazy plan-review role must exist in `agents`, have a
@@ -88,10 +90,12 @@ composes the normal make-plan contract and overrides only its interactive
 acceptance gate, producing an exclusive plan that can be handed directly to the
 run state machine.
 
-Lazy mode honors the existing external-review consent and timeout, finalize,
-proposal-only learning, plan-move, retry, and worktree settings. None of these
-settings authorizes commit, push, release, publish, deploy, worktree cleanup, or
-application of a learning proposal.
+`worktree = true` creates the deterministic execution worktree before discovery;
+set it to `false` for an explicit in-place journey. `commit_after_stage = true`
+creates replay-safe local commits for config, plan, implementation, applied
+review fixes, finalize changes, and a Git-visible plan move. Empty stages do not
+commit. Lazy also ensures project-owned Pi consent on first use. It never pushes,
+publishes, deploys, removes the worktree, or applies a learning proposal.
 
 ## Runtime profiles
 
@@ -166,6 +170,8 @@ directories; lazy preparation journeys use a nested namespace and link to the
 normal run created at handoff. All runtime state must be Git-ignored and must
 never enter fingerprints, reviews, commits, or releases.
 
-Worktree mode is off by default. Preparation first returns deterministic paths
-without mutation, then requires explicit approval before creation. Removal is a
-separate explicit operation and refuses a dirty worktree.
+Standalone `$run` worktree mode remains off by default and retains its explicit
+approval gate. `$lazy` has a separate early-worktree default: its invocation is
+authorization to create or reuse one deterministic sibling before project-file
+mutation. Origin runtime state remains discoverable from either worktree.
+Removal is always separate and refuses a dirty worktree.

@@ -12,11 +12,11 @@ processes and does not widen Codex permissions.
 ## Install
 
 ```bash
-codex plugin marketplace add krajcik/phasemill --ref v1.2.0
+codex plugin marketplace add krajcik/phasemill --ref v1.3.0
 codex plugin add phasemill@phasemill
 ```
 
-For local development, replace `krajcik/phasemill --ref v1.2.0` with the
+For local development, replace `krajcik/phasemill --ref v1.3.0` with the
 absolute path to a checkout. Codex uses its installed plugin cache at runtime.
 
 ## Core workflow
@@ -37,15 +37,15 @@ native read-only review, optional Pi review, finalization, and proposal-only
 learning. Durable state is stored under `.phasemill/runs/`; add
 `/.phasemill/runs/` to the project `.gitignore` before an in-place run.
 
-`lazy` autonomously advances a durable discovery, design, exclusive plan,
-bounded plan-review/fix, and normal `$run` handoff. Retrying the original start
-request is idempotent; after a turn or session interruption, use `$lazy continue`
-or `$status` to resume the same pending action. `$status` reports both the
-preparation journey and its linked implementation run without advancing either.
-It pauses for ambiguity, overlapping active work, permissions, worktree changes,
-Pi data-sharing consent, and exhausted retries. Commit, push, release, publish,
-deploy, worktree cleanup, and learning-proposal application remain outside
-`$lazy` as separate explicitly requested workflows.
+`lazy` creates one deterministic sibling worktree before any project mutation,
+then autonomously advances discovery, design, exclusive planning, bounded plan
+review/fix, and normal `$run` handoff. On first use it safely persists project
+Pi consent in `.codex/phasemill/config.toml`. Every mutation-bearing stage makes
+one replay-safe local commit; empty stages make none, and `$lazy` never pushes.
+After interruption, use `$lazy continue` or `$status` from either worktree.
+Set `[lazy] worktree = false` for an explicit in-place journey. Release,
+publish, deploy, worktree cleanup, and learning-proposal application remain
+separate workflows.
 
 Other bundled skills cover PR and local diff review, release preparation,
 unreleased changes, root-cause investigation, dialectic analysis, concise
@@ -100,9 +100,10 @@ commits learning updates implicitly.
   `--result-file PATH`; missing stdin fails within one second so a malformed CLI
   fallback cannot stall an autonomous run indefinitely.
 
-The state machine never implies commit, push, release, deploy, worktree
-creation, or worktree removal. Those mutations retain their explicit approval
-gates.
+Standalone state-machine workflows never imply commit, push, release, deploy,
+or worktree mutation. An explicit `$lazy` invocation authorizes only its early
+worktree and trailer-bound local stage commits; it never pushes or removes the
+worktree.
 
 ## Project customization
 

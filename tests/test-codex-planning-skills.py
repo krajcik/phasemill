@@ -175,15 +175,18 @@ class CodexPlanningSkillTests(unittest.TestCase):
         for phrase in (
             "overlapping dirty scope",
             "sandbox, network, or write permission",
-            "worktree.sh prepare",
-            "Pi data sharing",
+            "worktree.sh lazy-plan",
+            "lazy-prepare",
+            "data_sharing_approved = true",
             "exhausted task or plan-review retries",
-            "commit, amend, rebase, push",
+            "amend, rebase, push",
             "release, publish, deploy",
             "applying any learning proposal",
             "outside `$lazy`",
             "Do not run raw `git worktree add`",
-            "do not commit, push, publish, deploy",
+            "never push",
+            "Phasemill-Action: <action-id>",
+            "When the durable action/state has `commit_after_stage=true`",
         ):
             self.assertIn(phrase.lower(), text.lower())
 
@@ -196,8 +199,8 @@ class CodexPlanningSkillTests(unittest.TestCase):
             "exactly one lazy journey",
             "ask the user to choose",
             "phasemill:lazy",
-            "run-only status",
-            "recorded origin repository",
+            "resume the same parent journey from either location",
+            "main/origin worktree",
             "Never call `lazy_start` or `run_start` merely to inspect status",
         ):
             self.assertIn(phrase, text)
@@ -208,6 +211,19 @@ class CodexPlanningSkillTests(unittest.TestCase):
         self.assertIn("bounded by `max_parallel_agents`", text)
         self.assertIn("Reviewers cannot edit files or spawn agents", text)
         self.assertIn("root task deduplicates and verifies every finding", text)
+
+    def test_lazy_linked_run_commits_are_narrow_and_standalone_run_stays_manual(self) -> None:
+        text = self.normalized["run"]
+        for phrase in (
+            "durable parent state has `commit_after_stage=true`",
+            "`../../scripts/lazy-stage.py checkpoint`",
+            "exact run action id",
+            "only the verified paths",
+            "Standalone `$run` must never infer",
+            "A clean review creates no commit",
+            "Never push from finalize",
+        ):
+            self.assertIn(phrase, text)
 
     def test_native_agents_preserve_per_role_model_and_reasoning(self) -> None:
         make = self.normalized["plan"]

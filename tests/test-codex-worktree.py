@@ -64,6 +64,60 @@ class CodexWorktreeTests(unittest.TestCase):
             check=check,
         )
 
+    def lazy(self, command: str, *, journey: str = "abc123", head: str | None = None, check: bool = True):
+        return run(
+            SCRIPT,
+            command,
+            "--repo",
+            self.root,
+            "--journey-id",
+            journey,
+            "--head",
+            head or self.head,
+            cwd=self.root,
+            check=check,
+        )
+
+    def test_lazy_prepare_is_plan_independent_deterministic_and_reusable(self) -> None:
+        planned = fields(self.lazy("lazy-plan").stdout)
+        self.assertEqual("planned", planned["status"])
+        self.assertEqual("phasemill/lazy-abc123", planned["branch"])
+        self.assertEqual(self.head, planned["head"])
+
+        prepared = fields(self.lazy("lazy-prepare").stdout)
+        worktree = Path(prepared["project_root"])
+        self.assertEqual("created", prepared["status"])
+        self.assertEqual(self.head, run("git", "rev-parse", "HEAD", cwd=worktree).stdout.strip())
+        self.assertEqual("phasemill/lazy-abc123", run("git", "branch", "--show-current", cwd=worktree).stdout.strip())
+
+        (worktree / "stage.txt").write_text("stage\n", encoding="utf-8")
+        run("git", "add", "stage.txt", cwd=worktree)
+        run("git", "commit", "-m", "stage", cwd=worktree)
+        reused = fields(self.lazy("lazy-prepare").stdout)
+        self.assertEqual("reused", reused["status"])
+        inspected = fields(self.lazy("lazy-inspect").stdout)
+        self.assertEqual("reused", inspected["status"])
+
+    def test_lazy_prepare_rejects_dirty_origin_and_stale_or_divergent_head(self) -> None:
+        (self.root / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+        dirty = self.lazy("lazy-prepare", check=False)
+        self.assertEqual(2, dirty.returncode)
+        self.assertIn("dirty origin", dirty.stderr)
+        (self.root / "dirty.txt").unlink()
+
+        (self.root / "later.txt").write_text("later\n", encoding="utf-8")
+        run("git", "add", "later.txt", cwd=self.root)
+        run("git", "commit", "-m", "later", cwd=self.root)
+        stale = self.lazy("lazy-prepare", check=False)
+        self.assertEqual(2, stale.returncode)
+        self.assertIn("origin HEAD changed", stale.stderr)
+
+        current = run("git", "rev-parse", "HEAD", cwd=self.root).stdout.strip()
+        run("git", "branch", "phasemill/lazy-diverged", self.head, cwd=self.root)
+        divergent = self.lazy("lazy-prepare", journey="diverged", head=current, check=False)
+        self.assertEqual(2, divergent.returncode)
+        self.assertIn("diverges", divergent.stderr)
+
     def test_prepare_copies_untracked_plan_without_touching_main_and_reuses(self) -> None:
         first = fields(self.prepare().stdout)
         worktree = Path(first["project_root"])

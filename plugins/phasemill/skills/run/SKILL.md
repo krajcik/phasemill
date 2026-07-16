@@ -144,7 +144,12 @@ issues itself. Record:
 - `timed-out` when the configured deadline expires.
 
 Do not commit, push, rebase, publish, deploy, or broaden permissions as part of
-a task action unless the user separately requested that mutation.
+a task action unless the user separately requested that mutation. One narrow
+exception is a run currently driven by `phasemill:lazy` whose durable parent
+state has `commit_after_stage=true`: before `run_record`, the parent workflow
+uses packaged `../../scripts/lazy-stage.py checkpoint` with this exact run
+action id, pre-action HEAD, and only the verified paths changed by the action.
+Standalone `$run` must never infer or enable this exception from config alone.
 
 ## Execute review actions
 
@@ -174,6 +179,9 @@ Record `clean` when no confirmed actionable findings remain. Record `findings`
 with both snapshots when confirmed findings were addressed. If confirmed
 must-fix issues remain unresolved or validation fails, record `failed` instead
 of letting the controller's no-change convergence rule advance the run.
+When the linked lazy commit exception is active and fixes changed files,
+checkpoint those verified paths before `run_record`. A clean review creates no
+commit, and a replay reuses the existing `Phasemill-Action` trailer.
 
 ## Execute external review actions
 
@@ -204,6 +212,9 @@ tests, and report before/after HEAD and diff fingerprints. Map adapter success
 with no confirmed findings to `clean`, addressed findings to `findings`, an
 optional unavailable review to `skipped`, and required failures or unresolved
 must-fix findings to `failed`.
+When verified Pi findings changed files in a linked lazy run, checkpoint only
+those verified paths before `run_record`; a clean external review creates no
+commit.
 
 ## Finalize and complete
 
@@ -212,6 +223,9 @@ plan, progress, documentation, and validation results. Finalize never implies
 fetch, rebase, squash, commit, push, publish, deploy, or worktree deletion;
 those require a separate explicit user request. Record `completed`, `failed`,
 or `timed-out`.
+If finalize changed Git-visible files in a linked lazy run, checkpoint only
+those verified paths before recording; an empty finalize stage creates no
+commit. Never push from finalize.
 
 For `kind=learning`, execute the returned proposal-only prompt in the root task
 so it can inspect the current conversation as well as the plan and progress

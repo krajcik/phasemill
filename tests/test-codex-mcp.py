@@ -90,7 +90,7 @@ class PhasemillMCPTests(unittest.TestCase):
         initialized = responses[0]["result"]
         self.assertEqual("2025-11-25", initialized["protocolVersion"])
         self.assertEqual("phasemill", initialized["serverInfo"]["name"])
-        self.assertEqual("1.2.0", initialized["serverInfo"]["version"])
+        self.assertEqual("1.3.0", initialized["serverInfo"]["version"])
         names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertEqual(
             {
@@ -217,12 +217,13 @@ class PhasemillMCPTests(unittest.TestCase):
             "projectRoot": str(self.root),
             "requestId": "mcp-lazy-request",
             "idea": "Add bounded retries",
+            "overrides": ["lazy.worktree=false"],
         }
         started = call("lazy_start", start_args)["result"]
         self.assertFalse(started["isError"])
         action = started["structuredContent"]
         self.assertTrue(action["created"])
-        self.assertEqual("discovery", action["kind"])
+        self.assertEqual("bootstrap-config", action["kind"])
         journey_id = action["action_id"].split(":", 1)[0]
 
         replay = call("lazy_start", start_args)["result"]["structuredContent"]
@@ -234,6 +235,20 @@ class PhasemillMCPTests(unittest.TestCase):
         self.assertEqual(action["action_id"], next_action["action_id"])
         status = call("lazy_status", {"projectRoot": str(self.root)})["result"]["structuredContent"]
         self.assertEqual(journey_id, status["active"][0]["journey_id"])
+
+        bootstrapped = call(
+            "lazy_record",
+            {
+                "projectRoot": str(self.root),
+                "journeyId": journey_id,
+                "overrides": ["lazy.worktree=false"],
+                "actionId": action["action_id"],
+                "result": {"outcome": "completed", "summary": "consent ready"},
+            },
+        )["result"]
+        self.assertFalse(bootstrapped["isError"])
+        action = bootstrapped["structuredContent"]
+        self.assertEqual("discovery", action["kind"])
 
         design = call(
             "lazy_record",
@@ -301,7 +316,7 @@ class PhasemillMCPTests(unittest.TestCase):
     def test_lazy_mcp_rejects_unregistered_worktree_coordinates(self) -> None:
         common = {
             "projectRoot": str(self.root),
-            "overrides": ["worktree.enabled=true"],
+            "overrides": ["lazy.worktree=false", "worktree.enabled=true"],
         }
         action = call(
             "lazy_start",
@@ -327,6 +342,8 @@ class PhasemillMCPTests(unittest.TestCase):
             self.assertFalse(response["isError"], response)
             action = response["structuredContent"]
             return action
+
+        record({"outcome": "completed", "summary": "consent ready"})
 
         record(
             {
@@ -364,6 +381,134 @@ class PhasemillMCPTests(unittest.TestCase):
         )["result"]
         self.assertTrue(rejected["isError"])
         self.assertIn("stored approved helper coordinates", rejected["structuredContent"]["error"])
+
+    def test_lazy_mcp_reloads_consent_from_early_execution_worktree(self) -> None:
+        (self.root / ".gitignore").write_text("/.phasemill/runs/\n", encoding="utf-8")
+        subprocess.run(["git", "add", ".gitignore"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "-f", "docs/plans/change.md"], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "plan fixture"], cwd=self.root, check=True)
+        common = {"projectRoot": str(self.root)}
+        action = call(
+            "lazy_start",
+            {**common, "requestId": "early-consent", "idea": "Use durable consent"},
+        )["result"]["structuredContent"]
+        self.assertEqual("worktree", action["kind"])
+        journey = action["action_id"].split(":", 1)[0]
+        helper = PLUGIN / "scripts/worktree.sh"
+        output = subprocess.run(
+            [
+                str(helper), "lazy-prepare", "--repo", str(self.root),
+                "--journey-id", journey, "--head", action["origin_head"],
+            ],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        fields = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+        execution_root = Path(fields["project_root"])
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "-C", str(self.root), "worktree", "remove", "--force", str(execution_root)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        )
+
+        def record(result: dict[str, Any]) -> dict[str, Any]:
+            nonlocal action
+            response = call(
+                "lazy_record",
+                {
+                    **common,
+                    "journeyId": journey,
+                    "actionId": action["action_id"],
+                    "result": result,
+                },
+            )["result"]
+            self.assertFalse(response["isError"], response)
+            action = response["structuredContent"]
+            return action
+
+        record(
+            {
+                "outcome": "completed",
+                "execution_project_root": str(execution_root),
+                "execution_branch": fields["branch"],
+            }
+        )
+        from_worktree = call(
+            "lazy_status", {"projectRoot": str(execution_root), "journeyId": journey}
+        )["result"]
+        self.assertFalse(from_worktree["isError"], from_worktree)
+        self.assertEqual(journey, from_worktree["structuredContent"]["state"]["journey_id"])
+        config = execution_root / ".codex/phasemill/config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text("[review.external]\ndata_sharing_approved = true\n", encoding="utf-8")
+        record({"outcome": "completed", "summary": "consent ready"})
+        record({"outcome": "completed", "summary": "inspected", "scope_paths": ["src"]})
+        record({"outcome": "completed", "summary": "minimal design"})
+        plan = execution_root / action["plan_path"]
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text("# Plan\n\n### Task 1: Work\n\n- [ ] implement\n", encoding="utf-8")
+        record(
+            {
+                "outcome": "completed",
+                "plan_path": action["plan_path"],
+                "plan_digest": hashlib.sha256(plan.read_bytes()).hexdigest(),
+            }
+        )
+        handoff = record({"outcome": "clean"})
+        self.assertTrue(handoff["run_requirements"]["external_review"]["data_sharing_approved"])
+        self.assertEqual(str(execution_root), handoff["execution_project_root"])
+
+    def test_lazy_start_from_registered_worktree_anchors_state_in_main(self) -> None:
+        (self.root / ".gitignore").write_text("/.phasemill/runs/\n", encoding="utf-8")
+        subprocess.run(["git", "add", ".gitignore"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "-f", "docs/plans/change.md"], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "worktree fixture"], cwd=self.root, check=True)
+        feature = self.root.parent / f"{self.root.name}-feature"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "-b", "feature", str(feature)],
+            cwd=self.root,
+            check=True,
+        )
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "-C", str(self.root), "worktree", "remove", "--force", str(feature)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        )
+
+        action = call(
+            "lazy_start",
+            {"projectRoot": str(feature), "requestId": "feature-mcp", "idea": "Avoid nesting"},
+        )["result"]["structuredContent"]
+        self.assertEqual("worktree", action["kind"])
+        self.assertEqual(str(self.root.resolve()), action["origin_project_root"])
+        self.assertIn(f".{self.root.name}-phasemill-worktrees", action["execution_project_root"])
+        journey = action["action_id"].split(":", 1)[0]
+        self.assertTrue((self.root / f".phasemill/runs/lazy-{journey}/state.json").is_file())
+        self.assertFalse((feature / f".phasemill/runs/lazy-{journey}/state.json").exists())
+
+        cli = PLUGIN / "engine/lazy_controller.py"
+        cli_action = json.loads(
+            subprocess.run(
+                [
+                    "python3", str(cli), "--project-root", str(feature),
+                    "--set", "lazy.worktree=false", "start",
+                    "--request-id", "feature-cli", "--idea", "Avoid nested CLI state",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout
+        )
+        self.assertEqual("bootstrap-config", cli_action["kind"])
+        self.assertEqual(str(self.root.resolve()), cli_action["origin_project_root"])
 
 
 if __name__ == "__main__":

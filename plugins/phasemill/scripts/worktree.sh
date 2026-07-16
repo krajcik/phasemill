@@ -10,6 +10,9 @@ usage:
   worktree.sh prepare --repo <path> --plan <path> --default-branch <name> [--branch <name>]
   worktree.sh inspect --repo <path> --plan <path> [--branch <name>]
   worktree.sh remove  --repo <path> --plan <path> [--branch <name>] --yes
+  worktree.sh lazy-plan    --repo <path> --journey-id <id> --head <sha>
+  worktree.sh lazy-prepare --repo <path> --journey-id <id> --head <sha>
+  worktree.sh lazy-inspect --repo <path> --journey-id <id> --head <sha>
 
 prepare must be called from the default branch and permits no dirty path other
 than the plan. It never commits, checks out the main worktree, or removes an
@@ -45,7 +48,7 @@ emit() {
 
 command=${1:-}
 case "$command" in
-    plan|prepare|inspect|remove) shift ;;
+    plan|prepare|inspect|remove|lazy-plan|lazy-prepare|lazy-inspect) shift ;;
     -h|--help|"") usage; exit 0 ;;
     *) usage >&2; fail "unknown command: $command" ;;
 esac
@@ -55,6 +58,8 @@ plan=""
 default_branch=""
 branch=""
 confirmed=false
+journey_id=""
+recorded_head=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -82,12 +87,21 @@ while [ "$#" -gt 0 ]; do
             confirmed=true
             shift
             ;;
+        --journey-id)
+            [ "$#" -ge 2 ] || fail "--journey-id requires a value"
+            journey_id=$2
+            shift 2
+            ;;
+        --head)
+            [ "$#" -ge 2 ] || fail "--head requires a value"
+            recorded_head=$2
+            shift 2
+            ;;
         *) fail "unknown argument: $1" ;;
     esac
 done
 
 [ -n "$repo" ] || fail "--repo is required"
-[ -n "$plan" ] || fail "--plan is required"
 command -v git >/dev/null 2>&1 || fail "git is required"
 
 repo_root=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || fail "not a Git repository: $repo"
@@ -95,6 +109,108 @@ repo_root=$(cd "$repo_root" && pwd -P)
 root=$(git -C "$repo_root" worktree list --porcelain | sed -n 's/^worktree //p' | head -1)
 [ -n "$root" ] || fail "cannot resolve the main Git worktree: $repo"
 root=$(cd "$root" && pwd -P)
+
+case "$command" in
+    lazy-plan|lazy-prepare|lazy-inspect)
+        [ -n "$journey_id" ] || fail "--journey-id is required"
+        case "$journey_id" in
+            *[!a-z0-9-]*|"") fail "invalid lazy journey id: $journey_id" ;;
+        esac
+        [ -n "$recorded_head" ] || fail "--head is required"
+        git -C "$root" cat-file -e "$recorded_head^{commit}" 2>/dev/null || \
+            fail "recorded lazy HEAD is not a commit: $recorded_head"
+        branch="phasemill/lazy-$journey_id"
+        git check-ref-format --branch "$branch" >/dev/null 2>&1 || fail "invalid branch name: $branch"
+        parent=$(dirname "$root")
+        repo_name=$(basename "$root")
+        base="$parent/.${repo_name}-phasemill-worktrees"
+        worktree="$base/$branch"
+
+        inspect_lazy() {
+            [ -d "$worktree" ] || return 1
+            local actual_root actual_branch
+            actual_root=$(git -C "$worktree" rev-parse --show-toplevel 2>/dev/null) || return 1
+            [ "$(cd "$actual_root" && pwd -P)" = "$(cd "$worktree" && pwd -P)" ] || return 1
+            git -C "$root" worktree list --porcelain | grep -Fqx "worktree $worktree" || \
+                fail "path is not a registered worktree of $root: $worktree"
+            actual_branch=$(git -C "$worktree" branch --show-current)
+            [ "$actual_branch" = "$branch" ] || \
+                fail "worktree path uses branch $actual_branch, expected $branch: $worktree"
+            git -C "$worktree" merge-base --is-ancestor "$recorded_head" HEAD 2>/dev/null || \
+                fail "lazy worktree no longer descends from recorded HEAD $recorded_head"
+            return 0
+        }
+
+        emit_lazy() {
+            local status=$1
+            printf 'status=%s\n' "$status"
+            printf 'project_root=%s\n' "$worktree"
+            printf 'main_root=%s\n' "$root"
+            printf 'branch=%s\n' "$branch"
+            printf 'head=%s\n' "$recorded_head"
+        }
+
+        if [ "$command" = "lazy-inspect" ]; then
+            inspect_lazy || fail "lazy worktree does not exist: $worktree"
+            emit_lazy "reused"
+            exit 0
+        fi
+        if [ "$command" = "lazy-plan" ]; then
+            if inspect_lazy; then
+                emit_lazy "reused"
+            else
+                [ ! -e "$worktree" ] || \
+                    fail "path exists but is not the expected registered worktree: $worktree"
+                emit_lazy "planned"
+            fi
+            exit 0
+        fi
+
+        if inspect_lazy; then
+            emit_lazy "reused"
+            exit 0
+        fi
+        [ ! -e "$worktree" ] || fail "path exists but is not the expected registered worktree: $worktree"
+        [ "$repo_root" = "$root" ] || fail "a new lazy worktree must be prepared from the main worktree: $root"
+        [ "$(git -C "$root" rev-parse HEAD)" = "$recorded_head" ] || \
+            fail "origin HEAD changed since lazy bootstrap"
+        dirty=$(git -C "$root" status --porcelain=v1 --untracked-files=all)
+        [ -z "$dirty" ] || {
+            printf 'error: cannot create lazy worktree from a dirty origin:\n%s\n' "$dirty" >&2
+            exit 2
+        }
+        if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+            [ "$(git -C "$root" rev-parse "$branch")" = "$recorded_head" ] || \
+                fail "existing lazy branch diverges from recorded HEAD: $branch"
+        fi
+        mkdir -p "$base"
+        created=false
+        cleanup_lazy() {
+            if [ "$created" = true ]; then
+                git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+            fi
+        }
+        trap cleanup_lazy ERR INT TERM
+        if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+            git -C "$root" worktree add "$worktree" "$branch"
+        else
+            git -C "$root" worktree add "$worktree" -b "$branch" "$recorded_head"
+        fi
+        created=true
+        exclude_file=$(git -C "$worktree" rev-parse --git-path info/exclude)
+        mkdir -p "$(dirname "$exclude_file")"
+        touch "$exclude_file"
+        if ! grep -Fxq '/.phasemill/runs/' "$exclude_file"; then
+            printf '/.phasemill/runs/\n' >> "$exclude_file"
+        fi
+        trap - ERR INT TERM
+        created=false
+        emit_lazy "created"
+        exit 0
+        ;;
+esac
+
+[ -n "$plan" ] || fail "--plan is required"
 
 if [ ! -f "$plan" ]; then
     case "$plan" in
