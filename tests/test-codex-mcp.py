@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import subprocess
 import tempfile
 import unittest
@@ -17,7 +18,9 @@ PLUGIN = REPO / "plugins/phasemill"
 SERVER = PLUGIN / "mcp/server.py"
 
 
-def exchange(messages: list[dict[str, Any] | str]) -> list[dict[str, Any]]:
+def exchange(
+    messages: list[dict[str, Any] | str], *, environment: dict[str, str] | None = None
+) -> list[dict[str, Any]]:
     lines = [message if isinstance(message, str) else json.dumps(message) for message in messages]
     result = subprocess.run(
         ["python3", str(SERVER)],
@@ -26,13 +29,20 @@ def exchange(messages: list[dict[str, Any] | str]) -> list[dict[str, Any]]:
         text=True,
         capture_output=True,
         check=False,
+        env={**os.environ, **(environment or {})},
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr)
     return [json.loads(line) for line in result.stdout.splitlines()]
 
 
-def call(name: str, arguments: dict[str, Any], *, request_id: int = 2) -> dict[str, Any]:
+def call(
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    request_id: int = 2,
+    environment: dict[str, str] | None = None,
+) -> dict[str, Any]:
     responses = exchange(
         [
             {
@@ -48,7 +58,8 @@ def call(name: str, arguments: dict[str, Any], *, request_id: int = 2) -> dict[s
                 "method": "tools/call",
                 "params": {"name": name, "arguments": arguments},
             },
-        ]
+        ],
+        environment=environment,
     )
     return responses[-1]
 
@@ -90,7 +101,7 @@ class PhasemillMCPTests(unittest.TestCase):
         initialized = responses[0]["result"]
         self.assertEqual("2025-11-25", initialized["protocolVersion"])
         self.assertEqual("phasemill", initialized["serverInfo"]["name"])
-        self.assertEqual("1.3.0", initialized["serverInfo"]["version"])
+        self.assertEqual("1.4.0", initialized["serverInfo"]["version"])
         names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertEqual(
             {
@@ -101,6 +112,7 @@ class PhasemillMCPTests(unittest.TestCase):
                 "run_next",
                 "run_record",
                 "external_review",
+                "external_review_consent",
                 "lazy_start",
                 "lazy_status",
                 "lazy_next",
@@ -113,6 +125,30 @@ class PhasemillMCPTests(unittest.TestCase):
         self.assertFalse(result_schema["additionalProperties"])
         finding_schema = result_schema["properties"]["findings"]["items"]
         self.assertFalse(finding_schema["additionalProperties"])
+
+    def test_install_wide_external_review_consent_round_trip(self) -> None:
+        plugin_data = self.root / "plugin-data"
+        environment = {"PLUGIN_DATA": str(plugin_data)}
+        approved = call(
+            "external_review_consent", {"approved": True}, environment=environment
+        )["result"]
+        self.assertFalse(approved["isError"])
+        self.assertTrue(approved["structuredContent"]["approved"])
+
+        resolved = call(
+            "config_resolve", {"projectRoot": str(self.root)}, environment=environment
+        )["result"]["structuredContent"]
+        self.assertTrue(resolved["values"]["review"]["external"]["data_sharing_approved"])
+        self.assertIn(
+            "install-consent:", resolved["origins"]["review.external.data_sharing_approved"]
+        )
+
+        call("external_review_consent", {"approved": False}, environment=environment)
+        declined = call(
+            "config_resolve", {"projectRoot": str(self.root)}, environment=environment
+        )["result"]["structuredContent"]
+        self.assertEqual("none", declined["values"]["review"]["external"]["backend"])
+        self.assertFalse(declined["values"]["review"]["external"]["required"])
 
     def test_start_status_and_record_share_durable_revision_state(self) -> None:
         common = {"projectRoot": str(self.root), "plan": "docs/plans/change.md"}

@@ -352,6 +352,7 @@ class PhaseController:
                     external={
                         "backend": external["backend"],
                         "required": external["required"],
+                        "data_sharing_approved": external["data_sharing_approved"],
                         "command": external["command"],
                         "timeout_seconds": external["timeout_seconds"],
                         "idle_timeout_seconds": external["idle_timeout_seconds"],

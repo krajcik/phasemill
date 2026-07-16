@@ -177,7 +177,7 @@ class CodexPlanningSkillTests(unittest.TestCase):
             "sandbox, network, or write permission",
             "worktree.sh lazy-plan",
             "lazy-prepare",
-            "data_sharing_approved = true",
+            "mcp__phasemill__external_review_consent",
             "exhausted task or plan-review retries",
             "amend, rebase, push",
             "release, publish, deploy",
@@ -247,6 +247,7 @@ class CodexPlanningSkillTests(unittest.TestCase):
         text = self.normalized["run"]
         for phrase in (
             "`mcp__phasemill__external_review`",
+            "`mcp__phasemill__external_review_consent`",
             "pass the prompt through stdin",
             "direct without proxy",
             "`zai/glm-5.2` at `high`",

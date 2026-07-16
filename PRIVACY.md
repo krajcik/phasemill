@@ -4,7 +4,7 @@ Effective date: July 15, 2026
 
 Phasemill is an open-source Codex plugin that runs in the user's Codex
 environment. The Phasemill project does not operate a hosted service, collect
-telemetry, maintain user accounts, or receive repository content by default.
+telemetry, maintain user accounts, or receive repository content.
 
 ## Local data
 
@@ -23,10 +23,13 @@ Phasemill can use services already configured by the user:
 
 - Codex and OpenAI process prompts, repository context, and tool results under
   the terms and privacy policy applicable to the user's OpenAI account.
-- Optional independent review invokes the user's local `pi` installation with
-  the `zai/glm-5.2` model. Pi and ZAI may receive prompts and repository content
-  read through the adapter's `read`, `grep`, `find`, and `ls` tools. This review
-  is optional and can be disabled with `review.external.backend = "none"`.
+- Independent review is required by the shipped workflow and invokes the
+  user's local `pi` installation with the `zai/glm-5.2` model. Before the first
+  review, each installation asks once whether Pi and ZAI may receive prompts
+  and repository content read through the adapter's `read`, `grep`, `find`, and
+  `ls` tools. Approval applies to every project using that installation;
+  decline disables Pi globally. The choice is stored locally under
+  `PLUGIN_DATA` and can be overridden with `review.external.backend = "none"`.
 - GitHub workflows use the user's authenticated GitHub CLI session to read an
   explicitly named pull request. Phasemill posts or changes GitHub state only
   after separate approval of the exact action.

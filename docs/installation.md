@@ -5,12 +5,12 @@
 - Codex with plugin marketplace support;
 - Python 3.11 or newer;
 - Git for repository and worktree workflows;
-- optional `pi` configured for `zai/glm-5.2` when independent review is enabled.
+- `pi` configured for `zai/glm-5.2` when independent review is enabled.
 
 ## Install from GitHub
 
 ```bash
-codex plugin marketplace add krajcik/phasemill --ref v1.2.0
+codex plugin marketplace add krajcik/phasemill --ref v1.4.0
 codex plugin add phasemill@phasemill
 ```
 
@@ -18,7 +18,7 @@ Restart Codex after installation if the current session does not discover the
 new skills, hooks, or MCP server.
 
 For local development, clone the repository and replace
-`krajcik/phasemill --ref v1.2.0` with the absolute path to the checkout.
+`krajcik/phasemill --ref v1.4.0` with the absolute path to the checkout.
 
 ## Verify
 
@@ -33,6 +33,12 @@ Before `$run`, ignore runtime state:
 
 Project customization is optional and lives under `.codex/phasemill/`. Do not
 copy or edit files inside the installed plugin cache.
+
+The first `$lazy` or external-review stage asks once whether Pi/ZAI may receive
+repository code for read-only review. The choice is stored under the plugin's
+`PLUGIN_DATA` and applies to every project in that installation. Declining
+disables the external backend globally; set project or user configuration
+explicitly to change that choice later.
 
 ## Upgrade
 

@@ -3,20 +3,20 @@
 Phasemill is a Codex plugin for repository-grounded design, planning,
 implementation, review, and release. It combines focused and autonomous skills
 with a durable local state machine, native Codex subagents, optional advisory
-hooks, worktree isolation, and an independent read-only Pi review.
+hooks, worktree isolation, and a required independent read-only Pi review.
 
 The plugin is self-contained and dependency-free at runtime except for
-`python3`, `git`, Codex, and optional `pi`. It does not launch nested Codex CLI
+`python3`, `git`, Codex, and `pi`. It does not launch nested Codex CLI
 processes and does not widen Codex permissions.
 
 ## Install
 
 ```bash
-codex plugin marketplace add krajcik/phasemill --ref v1.3.0
+codex plugin marketplace add krajcik/phasemill --ref v1.4.0
 codex plugin add phasemill@phasemill
 ```
 
-For local development, replace `krajcik/phasemill --ref v1.3.0` with the
+For local development, replace `krajcik/phasemill --ref v1.4.0` with the
 absolute path to a checkout. Codex uses its installed plugin cache at runtime.
 
 ## Core workflow
@@ -33,14 +33,14 @@ $lazy add the retry policy end to end with minimal interaction
 ```
 
 `run` advances one revision-bound action at a time through implementation,
-native read-only review, optional Pi review, finalization, and proposal-only
+native read-only review, required Pi review, finalization, and proposal-only
 learning. Durable state is stored under `.phasemill/runs/`; add
 `/.phasemill/runs/` to the project `.gitignore` before an in-place run.
 
 `lazy` creates one deterministic sibling worktree before any project mutation,
 then autonomously advances discovery, design, exclusive planning, bounded plan
-review/fix, and normal `$run` handoff. On first use it safely persists project
-Pi consent in `.codex/phasemill/config.toml`. Every mutation-bearing stage makes
+review/fix, and normal `$run` handoff. On first use it stores one install-wide
+choice to enable Pi/ZAI review for all projects or disable it globally. Every mutation-bearing stage makes
 one replay-safe local commit; empty stages make none, and `$lazy` never pushes.
 After interruption, use `$lazy continue` or `$status` from either worktree.
 Set `[lazy] worktree = false` for an explicit in-place journey. Release,
@@ -82,9 +82,9 @@ commits learning updates implicitly.
 - `hooks/` adds advisory skill evaluation and compact active-journey/run
   context. Hooks never become the durable source of truth.
 - `engine/lazy_controller.py` persists the idea-to-plan journey and performs an
-  exact, origin-bound handoff to the normal run controller; optional review,
+  exact, origin-bound handoff to the normal run controller; configured review,
   Pi, finalize, learning, plan-move, and worktree settings remain authoritative.
-- `engine/pi_review.py` runs optional independent review through Pi with
+- `engine/pi_review.py` runs required independent review through Pi with
   `zai/glm-5.2`, `high`, direct networking, and read-only repository tools.
   A strict 40-tool prompt budget requires Pi to stop broad exploration after
   30 calls and return a concise final review before the wall timeout.
@@ -93,9 +93,10 @@ commits learning updates implicitly.
   `~/.pi/agent` and personal Pi settings or extensions are not loaded.
   Failed reviews retain bounded provider diagnostics without exposing proxy
   values or silently treating the review as skipped.
-  Projects may set `review.external.data_sharing_approved = true` to persist
-  consent for sending review context to Pi without a repeated workflow prompt;
-  Codex sandbox and managed policy still take precedence.
+  The first workflow stores one choice under `PLUGIN_DATA`: approval applies to
+  every project in that installation, while decline disables Pi globally.
+  User or project config may override the choice; Codex sandbox and managed
+  policy still take precedence.
 - `engine/phase_controller.py record` accepts result JSON through stdin or
   `--result-file PATH`; missing stdin fails within one second so a malformed CLI
   fallback cannot stall an autonomous run indefinitely.

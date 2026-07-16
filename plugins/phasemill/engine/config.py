@@ -22,6 +22,7 @@ from typing import Any, Iterable, Mapping, Sequence
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS_ROOT = PLUGIN_ROOT / "defaults"
 PROJECT_CONFIG_DIR = Path(".codex/phasemill")
+INSTALL_CONSENT_FILE = "external-review-consent.json"
 
 PROFILE_SUFFIXES = {
     ".go": "go",
@@ -325,6 +326,51 @@ def _read_toml(path: Path, *, required: bool = False) -> dict[str, Any]:
     return values
 
 
+def _install_consent_layer(user_root: Path) -> tuple[str, dict[str, Any]]:
+    path = user_root / INSTALL_CONSENT_FILE
+    if not path.is_file():
+        return f"install-consent:{path}", {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"cannot read install consent {path}: {exc}") from exc
+    if not isinstance(payload, dict) or set(payload) != {"version", "approved"}:
+        raise ConfigError(f"invalid install consent payload: {path}")
+    if payload["version"] != 1 or type(payload["approved"]) is not bool:
+        raise ConfigError(f"invalid install consent payload: {path}")
+    external = (
+        {"data_sharing_approved": True}
+        if payload["approved"]
+        else {"backend": "none", "required": False, "data_sharing_approved": False}
+    )
+    return f"install-consent:{path}", {"review": {"external": external}}
+
+
+def persist_install_consent(plugin_data: Path, *, approved: bool) -> Path:
+    root = plugin_data.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = root / INSTALL_CONSENT_FILE
+    if path.is_symlink():
+        raise ConfigError(f"install consent path must not be a symlink: {path}")
+    temporary = root / f".{INSTALL_CONSENT_FILE}.{os.getpid()}.tmp"
+    payload = json.dumps({"version": 1, "approved": approved}, sort_keys=True) + "\n"
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    except OSError as exc:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise ConfigError(f"cannot persist install consent {path}: {exc}") from exc
+    return path
+
+
 def parse_override(raw: str) -> tuple[str, Any]:
     if "=" not in raw:
         raise ConfigError(f"invalid --set {raw!r}; expected dotted.path=value")
@@ -545,8 +591,10 @@ def load_effective(
 
     values: dict[str, Any] = {}
     origins: dict[str, str] = {}
+    install_consent = _install_consent_layer(user_root)
     layers = (
         (f"embedded:{defaults_root / 'config.toml'}", _read_toml(defaults_root / "config.toml", required=True)),
+        install_consent,
         (f"user:{user_root / 'config.toml'}", _read_toml(user_root / "config.toml")),
         (f"project:{project_custom / 'config.toml'}", _read_toml(project_custom / "config.toml")),
         ("invocation", _override_layer(overrides)),
@@ -770,6 +818,8 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("validate", help="validate effective configuration")
     init = commands.add_parser("init", help="create commented project templates")
     init.add_argument("--yes", action="store_true", help="confirm creation")
+    consent = commands.add_parser("external-review-consent", help="persist one install-wide Pi review choice")
+    consent.add_argument("choice", choices=("approve", "decline"))
     return parser
 
 
@@ -780,6 +830,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             created = init_project(args.project_root, confirmed=args.yes)
             for path in created:
                 print(path)
+            return 0
+        if args.command == "external-review-consent":
+            if args.plugin_data is None:
+                raise ConfigError("external-review-consent requires the actual --plugin-data directory")
+            path = persist_install_consent(args.plugin_data, approved=args.choice == "approve")
+            print(path)
             return 0
         config = load_effective(
             project_root=args.project_root,

@@ -634,7 +634,7 @@ class LazyController:
                     execution_project_root=state.execution_project_root,
                     execution_branch=state.execution_branch,
                     commit_after_stage=state.commit_after_stage,
-                    reason="Ensure project-owned external-review consent before discovery.",
+                    reason="Resolve install-wide external-review consent before discovery.",
                 )
             if state.phase == "plan" and not state.plan_path:
                 state = self.store.update(state.revision, plan_path=self._plan_candidate(state))

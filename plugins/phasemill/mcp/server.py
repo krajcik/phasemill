@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping
 
 
 SERVER_NAME = "phasemill"
-SERVER_VERSION = "1.3.0"
+SERVER_VERSION = "1.4.0"
 LATEST_PROTOCOL = "2025-11-25"
 SUPPORTED_PROTOCOLS = frozenset({LATEST_PROTOCOL, "2025-06-18", "2025-03-26", "2024-11-05"})
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -299,6 +299,15 @@ def external_review(arguments: Mapping[str, Any]) -> dict[str, Any]:
     return asdict(result)
 
 
+def external_review_consent(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    plugin_data = os.environ.get("PLUGIN_DATA", "").strip()
+    if not plugin_data:
+        raise ToolError("PLUGIN_DATA is unavailable; cannot persist install-wide consent")
+    approved = _boolean(arguments, "approved", False)
+    path = CONFIG.persist_install_consent(Path(plugin_data), approved=approved)
+    return {"approved": approved, "path": str(path)}
+
+
 COMMON_RUN_PROPERTIES: dict[str, Any] = {
     "projectRoot": {"type": "string", "description": "Absolute repository root."},
     "plan": {"type": "string", "description": "Plan path relative to projectRoot."},
@@ -470,6 +479,16 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "external_review_consent",
+        "description": "Persist one install-wide choice for read-only Pi/ZAI review.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"approved": {"type": "boolean"}},
+            "required": ["approved"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "lazy_start",
         "description": "Start or replay an idempotent durable lazy preparation journey.",
         "inputSchema": {
@@ -531,6 +550,7 @@ TOOL_HANDLERS: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
     "run_next": run_next,
     "run_record": run_record,
     "external_review": external_review,
+    "external_review_consent": external_review_consent,
     "lazy_start": lazy_start,
     "lazy_status": lazy_status,
     "lazy_next": lazy_next,

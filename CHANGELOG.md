@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## Phasemill v1.4.0 - 2026-07-16
+
+### Changed
+
+- require the independent read-only Pi review by default and persist one
+  explicit Pi/ZAI data-sharing choice per plugin installation instead of per
+  project
+- keep a global opt-out, project and user overrides, and all Codex sandbox and
+  managed-policy approval boundaries
+
 ## Phasemill v1.3.0 - 2026-07-16
 
 ### New features

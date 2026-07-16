@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavior tests for lazy consent and replay-safe Git checkpoints."""
+"""Behavior tests for replay-safe lazy Git checkpoints."""
 
 from __future__ import annotations
 
@@ -44,78 +44,6 @@ class LazyStageTests(unittest.TestCase):
 
     def head(self) -> str:
         return self.cmd("git", "rev-parse", "HEAD").stdout.strip()
-
-    def test_consent_create_update_preserve_and_noop(self) -> None:
-        created = self.helper("consent", "--project-root", str(self.root))
-        self.assertEqual("updated", created["status"])
-        config = self.root / ".codex/phasemill/config.toml"
-        self.assertIn("data_sharing_approved = true", config.read_text(encoding="utf-8"))
-        self.assertEqual("noop", self.helper("consent", "--project-root", str(self.root))["status"])
-
-        config.write_text(
-            "# keep\n[review.external]\n"
-            "data_sharing_approved = false # retain comment\n\n[lazy]\nworktree = false\n",
-            encoding="utf-8",
-        )
-        updated = self.helper("consent", "--project-root", str(self.root))
-        self.assertEqual("updated", updated["status"])
-        content = config.read_text(encoding="utf-8")
-        self.assertIn("# keep", content)
-        self.assertIn("true # retain comment", content)
-        self.assertIn("[lazy]\nworktree = false", content)
-
-    def test_invalid_toml_is_never_replaced(self) -> None:
-        config = self.root / ".codex/phasemill/config.toml"
-        config.parent.mkdir(parents=True)
-        original = "[review.external\n"
-        config.write_text(original, encoding="utf-8")
-        result = self.helper("consent", "--project-root", str(self.root), check=False)
-        self.assertEqual("2", result["returncode"])
-        self.assertIn("invalid TOML", result["error"])
-        self.assertEqual(original, config.read_text(encoding="utf-8"))
-
-    def test_consent_supports_inline_and_dotted_valid_toml(self) -> None:
-        config = self.root / ".codex/phasemill/config.toml"
-        config.parent.mkdir(parents=True)
-        cases = (
-            '[review]\nexternal = { data_sharing_approved = false, backend = "none" }\n',
-            '[review]\nexternal = { backend = "none" }\n',
-            'review.external.backend = "none"\n',
-            'review = { external = { backend = "none" } }\n',
-            'review = { external = { command = ["pi # direct"], data_sharing_approved = false } }\n',
-            '[review."external"]\nbackend = "none"\n',
-            'review."external".backend = "none"\n',
-        )
-        for original in cases:
-            with self.subTest(original=original):
-                config.write_text(original, encoding="utf-8")
-                result = self.helper("consent", "--project-root", str(self.root))
-                self.assertEqual("updated", result["status"])
-                content = config.read_text(encoding="utf-8")
-                self.assertIn("data_sharing_approved", content)
-                self.assertEqual("noop", self.helper("consent", "--project-root", str(self.root))["status"])
-
-    def test_consent_ignores_commented_false_and_rejects_symlink_escape(self) -> None:
-        config = self.root / ".codex/phasemill/config.toml"
-        config.parent.mkdir(parents=True)
-        config.write_text(
-            "[review.external]\n# data_sharing_approved = false\n"
-            "data_sharing_approved = false\n",
-            encoding="utf-8",
-        )
-        self.helper("consent", "--project-root", str(self.root))
-        content = config.read_text(encoding="utf-8")
-        self.assertIn("# data_sharing_approved = false", content)
-        self.assertIn("\ndata_sharing_approved = true", content)
-
-        external = Path(self.tempdir.name) / "outside"
-        external.mkdir()
-        __import__("shutil").rmtree(self.root / ".codex")
-        os.symlink(external, self.root / ".codex")
-        escaped = self.helper("consent", "--project-root", str(self.root), check=False)
-        self.assertEqual("2", escaped["returncode"])
-        self.assertIn("escapes repository", escaped["error"])
-        self.assertFalse((external / "phasemill/config.toml").exists())
 
     def test_checkpoint_commit_replay_noop_and_scope_guards(self) -> None:
         action = "lazy-test:2:bootstrap-config"

@@ -103,6 +103,7 @@ class PhaseControllerTests(unittest.TestCase):
         self.assertEqual("external-review", action.kind)
         self.assertEqual(1200, action.external["timeout_seconds"])
         self.assertEqual(120, action.external["idle_timeout_seconds"])
+        self.assertFalse(action.external["data_sharing_approved"])
         action = controller.record_result(action.action_id, self.result("clean"))
         self.assertEqual("learning", action.kind)
         self.assertEqual("learning", action.prompt_name)
@@ -204,7 +205,7 @@ class PhaseControllerTests(unittest.TestCase):
         self.assertEqual("done", action.kind)
 
     def test_optional_external_skip_completes_but_required_skip_fails(self) -> None:
-        controller, action = self.start()
+        controller, action = self.start("review.external.required=false")
         action = self.reach_external(controller, action)
         action = controller.record_result(action.action_id, self.result("skipped"))
         self.assertEqual("learning", action.kind)
@@ -221,6 +222,7 @@ class PhaseControllerTests(unittest.TestCase):
     def test_external_disabled_and_finalize_enabled_emit_finalize_action(self) -> None:
         controller, action = self.start(
             'review.external.backend="none"',
+            "review.external.required=false",
             "finalize.enabled=true",
         )
         action = self.complete_tasks(controller, action)
@@ -236,7 +238,9 @@ class PhaseControllerTests(unittest.TestCase):
         )
 
     def test_learning_failure_is_advisory_and_can_be_disabled(self) -> None:
-        controller, action = self.start('review.external.backend="none"')
+        controller, action = self.start(
+            'review.external.backend="none"', "review.external.required=false"
+        )
         action = self.complete_tasks(controller, action)
         action = controller.record_result(action.action_id, self.result("clean"))
         self.assertEqual("learning", action.kind)
@@ -247,6 +251,7 @@ class PhaseControllerTests(unittest.TestCase):
         self.plan.write_text(PLAN, encoding="utf-8")
         disabled, action = self.start(
             'review.external.backend="none"',
+            "review.external.required=false",
             "learning.auto_propose=false",
         )
         action = self.complete_tasks(disabled, action)

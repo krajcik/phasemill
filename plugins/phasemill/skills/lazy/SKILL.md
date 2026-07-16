@@ -13,7 +13,8 @@ stages. Proceed automatically through reversible local work and never push.
 ## Resolve the installed boundary
 
 Prefer `mcp__phasemill__lazy_start`, `mcp__phasemill__lazy_status`,
-`mcp__phasemill__lazy_next`, and `mcp__phasemill__lazy_record`. At handoff use
+`mcp__phasemill__lazy_next`, `mcp__phasemill__lazy_record`, and
+`mcp__phasemill__external_review_consent`. At handoff use
 the existing `mcp__phasemill__run_status`, `run_start`, `run_next`, and
 `run_record` protocol exactly as specified by the sibling `phasemill:run`
 skill. Read that skill before executing a handoff; do not copy or weaken its
@@ -90,7 +91,7 @@ Record `timed-out` when a bounded action exceeds its deadline. Record `failed`
 for a non-recoverable local failure. Use `needs-input` only with one concrete
 question, a known gate, and two or three choices when choices are natural.
 
-### Early worktree and consent bootstrap
+### Early worktree and install-wide consent
 
 For `kind=worktree`, the explicit `$lazy` invocation authorizes calling
 packaged `../../scripts/worktree.sh lazy-plan` and `lazy-prepare` with the
@@ -99,13 +100,15 @@ worktree approval. Verify and record the exact returned root and branch;
 repeated preparation must reuse them. A dirty or drifted origin is an ambiguity
 gate and its changes must never be copied into the worktree.
 
-For `kind=bootstrap-config`, run packaged `../../scripts/lazy-stage.py consent`
-in the execution root. It safely ensures
-`.codex/phasemill/config.toml` contains
-`[review.external] data_sharing_approved = true` while preserving valid existing
-content. When `commit_after_stage=true`, checkpoint only that path with message
-`chore(phasemill): initialize lazy workflow`, then record completion. This
-project-owned setting is durable Pi data-sharing approval for the project.
+For `kind=bootstrap-config`, inspect effective external-review consent. If it
+is already decided, record completion without writing the repository. If it is
+unset, explain that Pi/ZAI receives repository code and ask once whether to
+enable read-only external review for every project in this plugin installation
+or disable it globally. Persist the choice with
+`mcp__phasemill__external_review_consent`; when MCP is unavailable use packaged
+`config.py --plugin-data <actual PLUGIN_DATA> external-review-consent
+approve|decline`. Never guess `PLUGIN_DATA`. Reload config, then record the
+bootstrap action. This stage creates no project file or Git commit.
 
 ### Discovery
 
@@ -219,7 +222,7 @@ the validated execution plan, applicable touched paths, and every exact
 `run_record` wherever those tools accept overrides. These temporary overrides
 are the origin journey's run-relevant effective settings and must remain
 unchanged for the linked run in an execution worktree. Follow all permission
-and Pi consent gates. The
+and install-wide Pi consent gates. The
 run controller remains sole owner of task, code review, Pi, finalize, retry,
 and proposal-only learning transitions.
 

@@ -36,7 +36,7 @@ Use a disposable repository with `/.phasemill/runs/` ignored:
    resume from `$status`, and confirm the existing plan-keyed run is linked
    rather than starting a duplicate. In worktree mode, confirm handoff pauses
    for approval and uses the exact path and branch reported by `worktree.sh`.
-4. Continue through native review, optional Pi review, finalize, and learning.
+4. Continue through native review, required Pi review, finalize, and learning.
    Confirm terminal `$status` reports one completed lazy journey and its linked
    run, and that learning only displays a proposal.
 5. Confirm native implementation and read-only review children inherit the root

@@ -94,7 +94,7 @@ run state machine.
 set it to `false` for an explicit in-place journey. `commit_after_stage = true`
 creates replay-safe local commits for config, plan, implementation, applied
 review fixes, finalize changes, and a Git-visible plan move. Empty stages do not
-commit. Lazy also ensures project-owned Pi consent on first use. It never pushes,
+commit. Lazy also resolves install-wide Pi consent on first use. It never pushes,
 publishes, deploys, removes the worktree, or applies a learning proposal.
 
 ## Runtime profiles
@@ -115,7 +115,7 @@ The external adapter has a deliberately fixed security and model contract:
 ```toml
 [review.external]
 backend = "pi"
-required = false
+required = true
 command = ["pi"]
 model = "zai/glm-5.2"
 thinking = "high"
@@ -130,6 +130,12 @@ streams JSON events, separates idle and wall-clock timeouts, and returns partial
 diagnostics. It also appends a fixed 40-tool review budget: broad exploration
 must stop after 30 calls and a final review is required by call 40.
 Set `backend = "none"` to disable it.
+
+`data_sharing_approved` is `false` in embedded defaults. On first use,
+Phasemill stores one explicit approve/decline choice in
+`${PLUGIN_DATA}/external-review-consent.json`. Approval enables Pi review for
+all projects in that plugin installation; decline overlays `backend = "none"`
+and `required = false`. Normal user and project config retain higher precedence.
 
 ## Automatic learning
 

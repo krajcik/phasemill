@@ -251,7 +251,7 @@ def verify_planning_pipeline(installed: dict[str, Path], root: Path) -> None:
     config_dir = fixture / ".codex/phasemill"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        "[review.external]\nbackend = \"none\"\n\n"
+        "[review.external]\nbackend = \"none\"\nrequired = false\n\n"
         "[finalize]\nenabled = false\n\n"
         "[plans]\nmove_on_completion = false\n",
         encoding="utf-8",
@@ -361,6 +361,28 @@ def verify_planning_pipeline(installed: dict[str, Path], root: Path) -> None:
         raise SmokeError("fixture unexpectedly gained a remote")
 
 
+def verify_install_consent(installed: dict[str, Path], root: Path) -> None:
+    config = installed["phasemill"] / "engine/config.py"
+    project = root / "consent-fixture"
+    project.mkdir()
+    plugin_data = root / "plugin-data"
+    base = [sys.executable, config, "--project-root", project, "--plugin-data", plugin_data]
+
+    run([*base, "external-review-consent", "approve"])
+    approved = run_json([*base, "show", "--format", "json"])
+    external = approved["values"]["review"]["external"]
+    if not external["required"] or not external["data_sharing_approved"]:
+        raise SmokeError(f"install-wide Pi approval was not applied: {external}")
+    origin = approved["origins"]["review.external.data_sharing_approved"]
+    if not origin.startswith("install-consent:"):
+        raise SmokeError(f"install-wide Pi approval has wrong origin: {origin}")
+
+    run([*base, "external-review-consent", "decline"])
+    declined = run_json([*base, "show", "--format", "json"])["values"]["review"]["external"]
+    if declined["backend"] != "none" or declined["required"]:
+        raise SmokeError(f"install-wide Pi decline was not applied: {declined}")
+
+
 def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     phasemill = installed["phasemill"]
     fixture = root / "lazy-fixture"
@@ -368,7 +390,7 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     origin_config = fixture / ".codex/phasemill/config.toml"
     origin_config.parent.mkdir(parents=True)
     origin_config.write_text(
-        "[review.external]\nbackend = \"none\"\n\n"
+        "[review.external]\nbackend = \"none\"\nrequired = false\n\n"
         "[plans]\nmove_on_completion = false\n",
         encoding="utf-8",
     )
@@ -480,28 +502,10 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     )
     if action.get("kind") != "bootstrap-config":
         raise SmokeError(f"lazy worktree did not advance to config bootstrap: {action}")
-    config_action = str(action["action_id"])
     config_head = git(execution, "rev-parse", "HEAD")
-    consent = run_json([sys.executable, stage_helper, "consent", "--project-root", execution])
-    if consent.get("status") != "updated":
-        raise SmokeError(f"lazy consent was not bootstrapped: {consent}")
-    config_commit = checkpoint(
-        config_action,
-        config_head,
-        "chore(phasemill): initialize lazy workflow",
-        ".codex/phasemill/config.toml",
-    )
-    if config_commit.get("status") != "committed":
-        raise SmokeError(f"lazy config stage did not commit: {config_commit}")
-    replayed = checkpoint(
-        config_action,
-        config_head,
-        "chore(phasemill): initialize lazy workflow",
-        ".codex/phasemill/config.toml",
-    )
-    if replayed.get("status") != "reused" or replayed.get("head") != config_commit.get("head"):
-        raise SmokeError("lazy config crash replay created or selected another commit")
-    lazy_record({"outcome": "completed", "summary": "installed consent bootstrap complete"})
+    lazy_record({"outcome": "completed", "summary": "install consent already resolved"})
+    if git(execution, "rev-parse", "HEAD") != config_head:
+        raise SmokeError("lazy install consent mutated the repository")
 
     lazy_record(
         {
@@ -658,14 +662,11 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
         raise SmokeError("lazy pipeline changed origin HEAD")
     if git(fixture, "branch", "--show-current") != branch_before:
         raise SmokeError("lazy pipeline changed the main branch")
-    if int(git(execution, "rev-list", "--count", f"{head_before}..HEAD")) < 4:
+    if int(git(execution, "rev-list", "--count", f"{head_before}..HEAD")) < 3:
         raise SmokeError("lazy pipeline did not create per-stage commits")
     messages = git(execution, "log", "--format=%B", f"{head_before}..HEAD")
-    if messages.count("Phasemill-Action:") < 4:
+    if messages.count("Phasemill-Action:") < 3:
         raise SmokeError("lazy stage commits lost their stable action trailers")
-    config_text = (config_dir / "config.toml").read_text(encoding="utf-8")
-    if "data_sharing_approved = true" not in config_text:
-        raise SmokeError("lazy project consent is not durable")
     remote_refs = subprocess.run(
         ["git", f"--git-dir={remote}", "show-ref"],
         text=True,
@@ -753,6 +754,7 @@ def main(argv: list[str]) -> int:
     try:
         installed = verify_install(codex, repo, temp_root / "codex-home")
         assert_mutation_guards(installed)
+        verify_install_consent(installed, temp_root)
         verify_planning_pipeline(installed, temp_root)
         verify_lazy_pipeline(installed, temp_root)
         verify_worktree(installed, temp_root)
@@ -764,6 +766,7 @@ def main(argv: list[str]) -> int:
             "clean_codex_home": True,
             "installed_cache_only": True,
             "planning_pipeline": "passed",
+            "install_wide_consent": "passed",
             "lazy_pipeline": "passed",
             "retry_resume": "passed",
             "review_fanout_contract": "passed",

@@ -13,9 +13,10 @@ subagents, verification, approvals, and all repository mutations.
 
 Prefer the bundled MCP tools `mcp__phasemill__run_start`,
 `mcp__phasemill__run_status`, `mcp__phasemill__run_next`,
-`mcp__phasemill__run_record`, and `mcp__phasemill__external_review`. They are
-the typed state-machine boundary. Resolve these fallback paths relative to this
-`SKILL.md` only when the MCP server is unavailable:
+`mcp__phasemill__run_record`, `mcp__phasemill__external_review`, and
+`mcp__phasemill__external_review_consent`. They are the typed state-machine
+boundary. Resolve these fallback paths relative to this `SKILL.md` only when
+the MCP server is unavailable:
 
 - `../../engine/config.py` for effective configuration;
 - `../../engine/phase_controller.py` for durable actions;
@@ -193,11 +194,21 @@ Never put the prompt on a command line or interpolate it into shell source.
 
 External Pi review sends repository code, diff, plan, and applicable
 instructions to the configured third-party model. When effective config
-`review.external.data_sharing_approved=true`, treat that project-owned setting
-as durable prior authorization and do not pause for another user confirmation.
-When it is false, obtain explicit approval before the first external review in
-the run. This consent never bypasses Codex sandbox, network, managed, or tenant
-policy and never converts a denied or failed required review into success.
+`review.external.data_sharing_approved=true`, treat it as durable prior
+authorization and do not pause for another user confirmation. The shipped Pi
+review is required but install-wide consent initially remains unset. When it is
+false, explain that Pi/ZAI receives repository code and ask once whether to
+enable the read-only external review for every project in this plugin
+installation or disable it globally.
+
+Persist that choice with `mcp__phasemill__external_review_consent`. If MCP is
+unavailable, invoke packaged `config.py --plugin-data <actual PLUGIN_DATA>
+external-review-consent approve|decline`; never guess `PLUGIN_DATA`. After
+approval, execute the current review action. After decline, call `run_next`
+again without recording the stale external-review action; the reloaded config
+will advance past the now-disabled backend. This one-time choice never bypasses
+Codex sandbox, network, managed, or tenant policy and never converts a denied
+or failed required review into success.
 
 The adapter is the security boundary: Pi runs direct without proxy, uses
 `zai/glm-5.2` at `high`, receives the full repository as cwd, and has only the

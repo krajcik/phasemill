@@ -13,9 +13,10 @@ correct or suitable for a particular purpose. Verify changes and comply with
 the licenses, policies, employment obligations, and data-handling requirements
 that apply to your repositories and integrations.
 
-Optional services such as OpenAI, GitHub, Pi, and ZAI are governed by their own
-terms. Phasemill does not control their availability, retention, billing, or
-processing.
+Third-party services such as OpenAI, GitHub, Pi, and ZAI are governed by their
+own terms. Pi/ZAI review is a required workflow stage after install-wide
+approval, but users can decline or disable it. Phasemill does not control these
+services' availability, retention, billing, or processing.
 
 To the maximum extent permitted by law, Phasemill is provided "as is", without
 warranty, and its maintainers are not liable for claims or damages arising from

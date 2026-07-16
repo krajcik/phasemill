@@ -25,7 +25,7 @@ patience = 0
 
 [review.external]
 backend = "pi"
-required = false
+required = true
 command = ["pi"]
 model = "zai/glm-5.2"
 thinking = "high"

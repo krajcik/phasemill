@@ -47,6 +47,21 @@ explicit request and only under the actual `PLUGIN_DATA` `rules/`, `profiles/`,
 or `agents/` tree. Project customization keeps higher precedence over this
 user-global layer.
 
+## Install-wide external review choice
+
+The shipped Pi backend is required, while data sharing starts unapproved. The
+first `$lazy` or external-review action asks once whether Pi/ZAI may receive
+repository code through the read-only adapter. Persist the answer only with
+`mcp__phasemill__external_review_consent`; if MCP is unavailable, use packaged
+`config.py --plugin-data <actual PLUGIN_DATA> external-review-consent
+approve|decline`. Never guess `PLUGIN_DATA`.
+
+The resulting `external-review-consent.json` layer is lower precedence than
+normal user and project config. Approval enables external review for every
+project in this installation. Decline sets the install layer to `backend=none`
+and `required=false`. Neither choice bypasses Codex sandbox, network, managed,
+or tenant policy.
+
 ## Initialize
 
 Only when the user explicitly asks to create project customization, run `python3 <script> --project-root <repo> init --yes`. Initialization creates comment-only examples under `.codex/phasemill/`, skips existing files, and leaves embedded defaults effective until examples are deliberately uncommented or filled in.

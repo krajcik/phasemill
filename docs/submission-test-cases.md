@@ -1,7 +1,8 @@
 # Plugin submission test cases
 
 These cases use a disposable public fixture repository with no credentials or
-private data. Optional Pi review is disabled unless a case explicitly tests it.
+private data. Pi review is explicitly disabled in test fixtures unless a case
+tests the install-wide consent or adapter contract.
 
 ## Positive cases
 

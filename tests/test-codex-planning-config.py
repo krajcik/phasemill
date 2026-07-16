@@ -290,7 +290,34 @@ class PlanningConfigTests(unittest.TestCase):
         self.assertEqual(1, config.values["execution"]["task_retries"])
         self.assertEqual(1200, config.values["review"]["external"]["timeout_seconds"])
         self.assertEqual(120, config.values["review"]["external"]["idle_timeout_seconds"])
+        self.assertTrue(config.values["review"]["external"]["required"])
         self.assertFalse(config.values["review"]["external"]["data_sharing_approved"])
+
+    def test_install_consent_is_global_and_lower_precedence_than_user_config(self) -> None:
+        path = CONFIG.persist_install_consent(self.user, approved=True)
+        self.assertEqual(0o600, path.stat().st_mode & 0o777)
+        approved = self.load()
+        self.assertTrue(approved.values["review"]["external"]["data_sharing_approved"])
+        self.assertIn("install-consent:", approved.origins["review.external.data_sharing_approved"])
+
+        CONFIG.persist_install_consent(self.user, approved=False)
+        declined = self.load()
+        self.assertEqual("none", declined.values["review"]["external"]["backend"])
+        self.assertFalse(declined.values["review"]["external"]["required"])
+
+        self.write(
+            self.user / "config.toml",
+            '[review.external]\nbackend = "pi"\nrequired = true\ndata_sharing_approved = true\n',
+        )
+        overridden = self.load()
+        self.assertEqual("pi", overridden.values["review"]["external"]["backend"])
+        self.assertTrue(overridden.values["review"]["external"]["required"])
+        self.assertTrue(overridden.origins["review.external.backend"].startswith("user:"))
+
+    def test_invalid_install_consent_fails_closed(self) -> None:
+        self.write(self.user / CONFIG.INSTALL_CONSENT_FILE, '{"approved": true}\n')
+        with self.assertRaisesRegex(CONFIG.ConfigError, "invalid install consent"):
+            self.load()
 
     def test_project_can_persist_external_review_data_sharing_consent(self) -> None:
         self.write(

@@ -37,13 +37,13 @@ action. Stale and out-of-order results are rejected.
 The normal flow is:
 
 ```text
-task -> first review -> convergence review -> optional Pi review -> finalize -> learning -> done
+task -> first review -> convergence review -> required Pi review -> finalize -> learning -> done
 ```
 
 The lazy preparation flow is:
 
 ```text
-early worktree -> consent checkpoint -> discovery -> design -> exclusive plan
+early worktree -> install consent checkpoint -> discovery -> design -> exclusive plan
 -> bounded plan review/fix -> exact run handoff
 ```
 
@@ -54,12 +54,12 @@ root, branch, and plan digest before linking one
 normal run. Restarting across that boundary reuses the matching run instead of
 starting a second one.
 
-Retries, review iterations, optional external review, finalization, and
+Retries, review iterations, configured external review, finalization, and
 automatic learning proposals are config-driven. The engine never edits
 implementation or project-scope files and never treats ephemeral Codex
 `update_plan` state as durable truth.
 
-Lazy mode additionally owns its deterministic early worktree, project consent
+Lazy mode additionally owns its deterministic early worktree, install consent
 bootstrap, and local mutation-stage checkpoints. Stable action trailers make a
 commit replay-safe across the commit-before-record crash window. Ambiguity,
 overlapping active work, permission changes, external mutations, and exhausted
