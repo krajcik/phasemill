@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## Phasemill v1.3.0 - 2026-07-16
+
 ### New features
 
 - make `$lazy` create one deterministic worktree before project mutation,
