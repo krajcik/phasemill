@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## Phasemill v1.5.0 - 2026-07-19
+
 ### Changed
 
 - let brainstorm and plan review automatically escalate one unresolved,

@@ -12,11 +12,11 @@ processes and does not widen Codex permissions.
 ## Install
 
 ```bash
-codex plugin marketplace add krajcik/phasemill --ref v1.4.0
+codex plugin marketplace add krajcik/phasemill --ref v1.5.0
 codex plugin add phasemill@phasemill
 ```
 
-For local development, replace `krajcik/phasemill --ref v1.4.0` with the
+For local development, replace `krajcik/phasemill --ref v1.5.0` with the
 absolute path to a checkout. Codex uses its installed plugin cache at runtime.
 
 ## Core workflow
