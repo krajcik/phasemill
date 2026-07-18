@@ -81,6 +81,14 @@ tests, and optional improvements. Each finding needs plan location, repository
 evidence, consequence, and a concrete revision. Do not invent findings when
 evidence is missing.
 
+Before the readiness verdict, invoke `phasemill:dialectic` at most once when
+the plan or verified reviewers disagree on one high-impact falsifiable
+assumption that controls whether the plan is safe to execute, and direct
+repository or runtime inspection has not resolved it. Give both sides the same
+claim, scope, evidence, and standard of proof, then use the verified synthesis
+as review evidence. Do not escalate ordinary findings, stylistic disagreement,
+multiple unrelated claims, or uncertainty that a small direct check can settle.
+
 When revising, keep the existing intent and accepted decisions, make the
 smallest coherent edits, then re-read the whole plan for contradictions. End
 with the exact plan path, whether it is ready for execution, and one next

@@ -98,6 +98,10 @@ class CodexPlanningSkillTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
         self.assertIn("verifies every returned claim", text)
+        self.assertIn("`phasemill:dialectic`", text)
+        self.assertIn("at most once", text)
+        self.assertIn("high-impact falsifiable assumption", text)
+        self.assertIn("small direct check can settle", text)
 
     def test_exec_is_driven_by_revision_bound_controller_actions(self) -> None:
         text = self.normalized["run"]

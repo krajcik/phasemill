@@ -61,6 +61,13 @@ class CodexBrainstormTests(unittest.TestCase):
         self.assertIn("native Codex plan", self.text)
         self.assertIn("decisions, assumptions, and open questions", self.text)
 
+    def test_high_impact_unresolved_claim_escalates_once_to_dialectic(self) -> None:
+        normalized = re.sub(r"\s+", " ", self.text)
+        self.assertIn("`phasemill:dialectic`", normalized)
+        self.assertIn("at most once", normalized)
+        self.assertIn("high-impact falsifiable claim", normalized)
+        self.assertIn("claims already resolved by direct inspection", normalized)
+
     def test_claude_only_tool_syntax_does_not_leak(self) -> None:
         for forbidden in (
             "AskUserQuestion",

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- let brainstorm and plan review automatically escalate one unresolved,
+  high-impact falsifiable claim to bounded dialectic analysis while keeping
+  preferences, routine findings, and directly verifiable questions local
+
 ## Phasemill v1.4.0 - 2026-07-16
 
 ### Changed

@@ -49,6 +49,15 @@ class CodexThinkingToolsTests(unittest.TestCase):
         self.assertIn("root task then verifies every material citation", text)
         self.assertIn("Do not average incompatible claims or force a winner", text)
 
+    def test_dialectic_has_bounded_automatic_escalation_contract(self) -> None:
+        text = self.normalized["dialectic"]
+        description = frontmatter(self.text["dialectic"]).get("description", "")
+        self.assertIn("invoke automatically from Phasemill brainstorm or plan review", description)
+        self.assertIn("all of these conditions hold", text)
+        self.assertIn("Escalate at most once per parent phase", text)
+        self.assertIn("direct repository or runtime inspection has not already resolved the claim", text)
+        self.assertIn("a verdict is evidence, not user approval", text)
+
     def test_root_cause_uses_falsifiable_chain_without_fabricated_five_whys(self) -> None:
         text = self.normalized["root-cause-investigator"]
         self.assertIn("Diagnosis does not authorize a fix", text)

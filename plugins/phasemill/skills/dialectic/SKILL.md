@@ -1,6 +1,6 @@
 ---
 name: dialectic
-description: Stress-test a concrete claim with parallel thesis and antithesis analysis, then verify and synthesize the evidence. Use for "dialectic", "prove or disprove", "argue both sides", "stress test this claim", or "is this really true".
+description: Stress-test a concrete claim with parallel thesis and antithesis analysis, then verify and synthesize the evidence. Use for "dialectic", "prove or disprove", "argue both sides", "stress test this claim", or "is this really true". Also invoke automatically from Phasemill brainstorm or plan review when a high-impact decision depends on one unresolved falsifiable claim with credible evidence on both sides.
 ---
 
 # Dialectic
@@ -8,6 +8,24 @@ description: Stress-test a concrete claim with parallel thesis and antithesis an
 Extract one falsifiable claim and its scope. If the statement is ambiguous,
 ask one focused question before analysis. Read applicable `AGENTS.md` and gather
 the minimum shared repository/runtime context both sides need.
+
+## Automatic escalation contract
+
+`phasemill:brainstorm` or `phasemill:plan-review` may invoke this skill
+automatically only when all of these conditions hold:
+
+- one material, falsifiable claim controls the design choice or plan-readiness
+  verdict;
+- the claim affects architecture, security, compatibility, cost, performance,
+  or rollout risk;
+- both sides have credible evidence or concrete counterexamples worth checking;
+- direct repository or runtime inspection has not already resolved the claim.
+
+Escalate at most once per parent phase. Do not escalate preferences, broad
+open-ended exploration, ordinary reviewer findings, or claims with decisive
+direct evidence. Return the verified synthesis to the parent skill, which
+resumes its workflow; a verdict is evidence, not user approval for a design or
+mutation.
 
 Launch exactly two native Codex read-only leaf subagents in parallel:
 

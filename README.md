@@ -50,6 +50,10 @@ separate workflows.
 Other bundled skills cover PR and local diff review, release preparation,
 unreleased changes, root-cause investigation, dialectic analysis, concise
 technical writing, project learning, clarification, and clipboard helpers.
+Brainstorm and plan review automatically escalate at most one unresolved,
+high-impact falsifiable claim to dialectic analysis when credible evidence
+exists on both sides and direct inspection cannot settle it; routine trade-offs
+and ordinary review findings stay in their parent workflow.
 
 ## Proposal-only project learning
 

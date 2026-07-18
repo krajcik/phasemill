@@ -59,6 +59,13 @@ Lead with a recommendation and explain the mechanism, trade-offs, migration
 cost, and operational consequences. Remove speculative features and premature
 abstractions.
 
+If the recommendation depends on one unresolved high-impact falsifiable claim
+with credible evidence on both sides, invoke `phasemill:dialectic` at most once
+before asking the user to choose. Pass the exact claim, scope, shared evidence,
+and standard of proof, then incorporate its verified verdict into the
+alternatives. Do not escalate preferences, generic trade-offs, claims already
+resolved by direct inspection, or low-impact uncertainty.
+
 Ask which direction to take. If the evidence strongly rules out an option, say
 so instead of presenting false symmetry.
 
