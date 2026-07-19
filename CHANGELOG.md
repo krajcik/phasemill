@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## Phasemill v1.6.0 - 2026-07-19
+
 ### Changed
 
 - focus lazy plan review on implementation and quality reviewers by default

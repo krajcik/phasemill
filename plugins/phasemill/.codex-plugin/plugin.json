@@ -1,6 +1,6 @@
 {
   "name": "phasemill",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "A durable Codex workflow for autonomous planning, implementation, review, project learning, and release.",
   "author": {
     "name": "Krajcik",
