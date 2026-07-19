@@ -22,6 +22,7 @@ class LazyStageTests(unittest.TestCase):
         self.root = Path(self.tempdir.name) / "repo"
         self.root.mkdir()
         self.cmd("git", "init", "-q", "-b", "main")
+        self.cmd("git", "config", "core.excludesFile", "/dev/null")
         self.cmd("git", "config", "user.name", "Lazy Stage Test")
         self.cmd("git", "config", "user.email", "lazy-stage@example.invalid")
         (self.root / "README.md").write_text("base\n", encoding="utf-8")
@@ -106,6 +107,45 @@ class LazyStageTests(unittest.TestCase):
             "--message", "plan", "--expected-head", current, "--path", "README.md", check=False,
         )
         self.assertIn("new dirty paths", replay["error"])
+
+    def test_checkpoint_accepts_project_learning_rule_and_skill_paths(self) -> None:
+        rule = self.root / ".codex/phasemill/rules/implementation.md"
+        skill = self.root / ".codex/skills/release-check/SKILL.md"
+        rule.parent.mkdir(parents=True)
+        skill.parent.mkdir(parents=True)
+        rule.write_text(
+            "Use $release-check "
+            "(../../skills/release-check/SKILL.md) before publishing.\n",
+            encoding="utf-8",
+        )
+        skill.write_text(
+            "---\n"
+            "name: release-check\n"
+            "description: Verify a release before publishing.\n"
+            "---\n\n"
+            "# Release check\n",
+            encoding="utf-8",
+        )
+        base = self.head()
+        action = "run-test:9:learning"
+        committed = self.helper(
+            "checkpoint", "--project-root", str(self.root), "--action-id", action,
+            "--message", "chore(phasemill): complete learning",
+            "--expected-head", base,
+            "--path", ".codex/phasemill/rules/implementation.md",
+            "--path", ".codex/skills/release-check/SKILL.md",
+        )
+        self.assertEqual("committed", committed["status"])
+        changed = self.cmd(
+            "git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"
+        ).stdout.splitlines()
+        self.assertEqual(
+            [
+                ".codex/phasemill/rules/implementation.md",
+                ".codex/skills/release-check/SKILL.md",
+            ],
+            sorted(changed),
+        )
 
     def test_checkpoint_supports_staged_and_filesystem_renames(self) -> None:
         old = self.root / "old.txt"

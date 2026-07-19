@@ -1,6 +1,6 @@
 ---
 name: lazy
-description: Autonomously take an idea through durable discovery, design, plan creation and review, implementation, review, finalize, and proposal-only learning with minimal user involvement. Use for "$lazy <idea>", "lazy mode", "do this end to end", or "continue lazy".
+description: Autonomously take an idea through durable discovery, design, plan creation and review, implementation, review, finalize, and project learning with minimal user involvement. Use for "$lazy <idea>", "lazy mode", "do this end to end", or "continue lazy".
 ---
 
 # Lazy end-to-end workflow
@@ -194,12 +194,13 @@ Pause with `needs-input` before:
 - continuing after exhausted task or plan-review retries;
 - amend, rebase, push, pull request, release, publish, deploy, database,
   infrastructure, or other external mutation;
-- applying any learning proposal locally or globally.
+- applying any user-global learning diff.
 
 Normal Codex policy remains authoritative. Config cannot widen permissions.
-Push, release, publish, deploy, worktree cleanup, and application of learning
-proposals remain outside `$lazy`. The only implicit Git mutations are its early
-worktree and trailer-bound local stage commits.
+Push, release, publish, deploy, worktree cleanup, and application of global
+learning remain outside `$lazy`. Project learning is owned by the linked
+`$run`; the only implicit Git mutations are the early worktree and
+trailer-bound local stage commits.
 
 ## Handoff to the existing run
 
@@ -224,27 +225,32 @@ are the origin journey's run-relevant effective settings and must remain
 unchanged for the linked run in an execution worktree. Follow all permission
 and install-wide Pi consent gates. The
 run controller remains sole owner of task, code review, Pi, finalize, retry,
-and proposal-only learning transitions.
+and project learning transitions. `$lazy` never creates a separate learning
+action or approval phase.
 
 While driving the linked run, call the same checkpoint helper before
 `run_record` whenever a task, confirmed native/Pi review fix, or finalize action
 leaves Git-visible changes. Pass only paths verified against that action's
-diff. Clean reviews and proposal-only learning create no commit. Use message
-`chore(phasemill): complete <phase>` and the exact run action id. This exception
-applies only to a run linked from a lazy journey whose durable
-`commit_after_stage` is true; standalone `$run` never inherits it.
+diff. For successful project learning, checkpoint only validated paths under
+`.codex/phasemill/rules/**` and `.codex/skills/**` before `run_record`, using
+message `chore(phasemill): complete learning` and the exact run learning action
+id. Clean or restored learning creates no commit. Other mutation stages use
+message `chore(phasemill): complete <phase>`. This exception applies only to a
+run linked from a lazy journey whose durable `commit_after_stage` is true;
+standalone `$run` never inherits it.
 
 When the linked run reaches terminal state, call `lazy_record` once with its
 exact `linked_run_id`, registered `execution_project_root`,
 `execution_plan_path`, and `run_outcome`. Record no implementation phase details
-in lazy state. A completed learning action may display numbered proposals, but
-never applies `.codex/phasemill/`, user-global rules, profiles, or agent roles;
-application requires a later explicit `phasemill:learn` interaction.
+in lazy state. A completed learning action may apply validated project rules
+and skills. It must never apply a user-global rule, profile, role, or Codex
+skill without a fresh exact diff and explicit user approval.
 
 ## Completion
 
 At terminal `done`, report the plan, implementation run id, execution root,
-validation, remaining dirty changes, and any proposal-only learning candidates.
+validation, remaining dirty changes, applied project learning, and any
+unapplied global learning candidates.
 After recording lazy terminal success, honor the existing run contract for
 `values.plans.move_on_completion`: move only its active execution plan and
 report the new path. When that move is Git-visible and `commit_after_stage` is

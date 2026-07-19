@@ -15,7 +15,9 @@ If one or more skills are relevant:
 2. Read every selected SKILL.md completely before acting, including only the references it routes you to.
 3. Follow all selected skill contracts and the user's higher-precedence instructions.
 
-If no skill is relevant, proceed directly. Do not claim to use a skill without loading and following it. Do not delegate reading or interpreting skill instructions to a subagent."""
+If no skill is relevant, proceed directly. Do not claim to use a skill without loading and following it. Do not delegate reading or interpreting skill instructions to a subagent.
+
+Phasemill `run` owns automatic learning after a successful run. Do not select `phasemill:learn` merely because an active run reached its learning action. Select the manual skill only when the user explicitly asks to learn, save knowledge, apply learning, or learn from a named PR; never start background learning from this hook."""
 
 
 def response(*, warning: str = "") -> dict[str, Any]:

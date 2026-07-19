@@ -589,8 +589,8 @@ class PhaseController:
     def _record_learning(self, state: Any, result: PhaseResult) -> None:
         if result.outcome not in {"completed", "clean", "failed", "timed-out", "skipped"}:
             raise PhaseControllerError(f"learning action does not accept {result.outcome!r}")
-        # Learning is advisory and proposal-only. A failure must not turn an
-        # already validated implementation into a failed run.
+        # Project learning is advisory. A failed or restored learning action
+        # must not turn an already validated implementation into a failed run.
         self.store.finish(state.revision, success=True)
 
 

@@ -1,6 +1,6 @@
 ---
 name: config
-description: Inspect, validate, or initialize project and user customization for the Phasemill Codex workflow. Use for config precedence, native agent routing hints, prompts, review roles, language profiles, rules, Pi review settings, retries, timeouts, proposal-only learning, finalize, or worktree options.
+description: Inspect, validate, or initialize project and user customization for the Phasemill Codex workflow. Use for config precedence, native agent routing hints, prompts, review roles, language profiles, rules, Pi review settings, retries, timeouts, project learning, finalize, or worktree options.
 ---
 
 # Planning configuration
@@ -37,15 +37,17 @@ it. A project can override every role independently, for example
 `--set 'agents.review-quality.model="gpt-5.6-sol"' --set
 'agents.review-quality.model_reasoning_effort="xhigh"'`.
 
-`values.learning.auto_propose` controls only the automatic proposal check after
-a successful full run. It does not authorize writes and does not disable an
-explicit `phasemill:learn` request. Project-scope learning always retains its
-candidate-selection and exact-diff approval gates.
+`values.learning.auto_propose` is retained as the automatic learning enable
+switch for compatibility. When `true`, the root learning action may apply
+validated project rules and project Codex skills after a successful full run;
+when `false`, the automatic action is skipped. It does not disable an explicit
+`phasemill:learn` request.
 
-The same gates apply to user-global learning. It is available only on an
-explicit request and only under the actual `PLUGIN_DATA` `rules/`, `profiles/`,
-or `agents/` tree. Project customization keeps higher precedence over this
-user-global layer.
+Project learning does not require candidate-selection or exact-diff approval.
+User-global learning remains available only on an explicit request and
+requires approval of a fresh exact diff under the actual `PLUGIN_DATA` layer or
+an exact global Codex skill root. Never guess either root. Project
+customization keeps higher precedence over user-global guidance.
 
 ## Install-wide external review choice
 

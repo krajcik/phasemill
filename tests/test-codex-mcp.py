@@ -101,7 +101,7 @@ class PhasemillMCPTests(unittest.TestCase):
         initialized = responses[0]["result"]
         self.assertEqual("2025-11-25", initialized["protocolVersion"])
         self.assertEqual("phasemill", initialized["serverInfo"]["name"])
-        self.assertEqual("1.4.0", initialized["serverInfo"]["version"])
+        self.assertEqual("1.7.0", initialized["serverInfo"]["version"])
         names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertEqual(
             {
@@ -204,7 +204,9 @@ class PhasemillMCPTests(unittest.TestCase):
             },
         )["result"]["structuredContent"]
         self.assertEqual("learning", learning["kind"])
-        self.assertIn("Proposal-only project learning", learning["prompt"])
+        self.assertIn("# Project learning", learning["prompt"])
+        self.assertIn(".codex/skills/<kebab-case-name>/SKILL.md", learning["prompt"])
+        self.assertIn("explicit approval", learning["prompt"])
         done = call(
             "run_record",
             {

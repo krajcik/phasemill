@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping
 
 
 SERVER_NAME = "phasemill"
-SERVER_VERSION = "1.4.0"
+SERVER_VERSION = "1.7.0"
 LATEST_PROTOCOL = "2025-11-25"
 SUPPORTED_PROTOCOLS = frozenset({LATEST_PROTOCOL, "2025-06-18", "2025-03-26", "2024-11-05"})
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]

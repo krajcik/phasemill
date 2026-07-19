@@ -1,9 +1,8 @@
-# Proposal-only project learning
+# Project learning
 
-Inspect the completed Phasemill run for durable project knowledge. This action
-must never edit repository files, plugin files, configuration, runtime state,
-or external systems. Its only output is either a learning proposal or a clean
-result stating that no durable signal exists.
+Inspect the completed Phasemill run for durable project knowledge. The root
+Codex task owns this action because it can inspect the current conversation as
+well as the plan and progress log.
 
 ## Allowed evidence
 
@@ -12,63 +11,68 @@ Use only:
 1. corrective comments from the user in the current conversation;
 2. confirmed implementation, testing, native-review, or Pi-review findings
    recorded for this run in `{{PROGRESS_FILE}}`;
-3. comments and inline review threads from another developer in a PR explicitly
-   named in the current request, conversation, or `{{PLAN_FILE}}`.
+3. comments and inline review threads from one PR explicitly named in the
+   current request, conversation, or `{{PLAN_FILE}}`.
 
-Do not search unrelated PRs or repository history. A developer review comment
-qualifies only when it is verified against the code and was accepted by the
-author, resolved by a corresponding code change, or explicitly confirmed by
-the user. Exclude questions, praise, bot noise, rejected findings, subjective
-preferences without a declared project convention, one-off compromises,
+Do not search unrelated PRs or repository history. A developer comment
+qualifies only when it was verified against the code and accepted, resolved by
+a corresponding code change, or explicitly confirmed by the user. Exclude
+questions, praise, bot noise, rejected findings, one-off compromises,
 temporary workarounds, task-specific facts, and knowledge already documented.
 
-## Allowed destinations and scope
+## Choose a project destination
 
-Project scope is the default. Propose project changes under
-`.codex/phasemill/`:
+Read existing destinations first and deduplicate against them. Project scope
+is the default and may be applied without another approval:
 
-- `rules/brainstorm.md`, `rules/planning.md`, `rules/implementation.md`,
-  `rules/testing.md`, `rules/review.md`, or `rules/writing-style.md` for durable
-  project conventions;
-- `profiles/<language>.md` for language- or framework-specific guidance;
-- `agents/<role>.md` for a project-specific review role.
+- put a compact invariant or activation condition in the narrowest matching
+  `.codex/phasemill/rules/{brainstorm,planning,implementation,testing,review,writing-style}.md`;
+- put a reusable multi-step procedure in
+  `.codex/skills/<kebab-case-name>/SKILL.md`, with only the references,
+  examples, templates, assets, or scripts required by that procedure;
+- when a rule delegates to a skill, name `$<skill-name>` and link
+  `../../skills/<skill-name>/SKILL.md`.
 
-Only when the user explicitly asks to make the learning global, a candidate
-may instead target the actual non-empty `${PLUGIN_DATA}` root used by the
-installed plugin:
+A project skill must have valid `name` and `description` frontmatter, keep all
+support files inside its own directory, avoid new dependencies or permissions,
+and contain reusable instructions rather than facts from the completed task.
+Do not edit `AGENTS.md`, plugin files, embedded defaults, ordinary source,
+tests, documentation, configuration, or any path outside these project
+learning destinations.
 
-- `${PLUGIN_DATA}/rules/<kind>.md` for a cross-project user convention;
-- `${PLUGIN_DATA}/profiles/<language>.md` for reusable language or framework
-  guidance;
-- `${PLUGIN_DATA}/agents/<role>.md` for a reusable complete review role.
+## Apply and verify project learning
 
-Never infer or invent a global path when `PLUGIN_DATA` is unavailable, and
-never promote a project/domain convention merely because it occurred more than
-once. A global candidate must be repository-independent and useful across the
-user's projects. State that project files have higher precedence and identify
-any project rule that would shadow or supplement the global proposal.
+Before editing, capture the current content or absence of every exact
+destination selected for this action. Apply only the minimal deduplicated
+project diff, then verify:
 
-Never propose changes outside the selected project or user-global Phasemill
-scope, or to the installed plugin, embedded defaults, `AGENTS.md`, prompts,
-`config.toml`, source code, tests, or documentation through this automatic
-phase. Do not create a new role unless existing rule/profile files cannot
-express the learning.
+- every changed path is inside the project allowlist above;
+- skill frontmatter, directory names, and relative links are valid;
+- rule-to-skill links resolve;
+- unrelated existing guidance and files are unchanged;
+- no task-specific knowledge, dependency, permission, secret, or personal data
+  was introduced.
 
-## Proposal contract
+If verification fails, repair the learning diff and verify again. Make at most
+two repair attempts. If it still fails, restore only the destinations changed
+by this learning action to their captured content or absence and report the
+diagnostic. Never reset, restore, or delete unrelated project changes.
 
-Read existing destinations first and deduplicate against them. For each
-candidate provide:
+Return `clean` when no durable signal qualifies. Return `completed` with the
+provenance, classification, exact changed paths, validation result, and repair
+count when project learning is applied successfully. Return `failed` or
+`timed-out` only after the learning-owned diff was restored. Learning remains
+advisory, so any result finishes the already validated implementation run.
 
-- a stable candidate number and concise rule;
-- exact destination;
-- source type and provenance: user feedback or explicit PR review, plus the
-  run/PR, relevant file or symbol, and supporting code change;
-- why it generalizes beyond the completed task;
-- conflicts or overlap with existing guidance;
-- an exact minimal unified diff that has not been applied;
-- confidence: high, medium, or low.
+## Explicit global learning
 
-Return `clean` when no candidate survives these checks. Return `completed`
-with the proposal in the result summary when candidates exist. The user must
-select candidates and approve the resulting current diff in a separate
-`phasemill:learn` interaction before any project-scope file changes.
+Never apply a global change automatically. Only when the user explicitly asks
+for global learning may a repository-independent candidate target the actual
+non-empty `${PLUGIN_DATA}` rules, profiles, or agents tree, or an exact global
+Codex skill root already exposed by the current skill catalog or explicitly
+provided by the user.
+
+Never guess a global root, including `~/.codex/skills`. Re-read every exact
+destination, show one fresh combined unified diff, and obtain explicit approval
+of that exact diff before writing. Project files retain higher precedence, and
+global changes never become part of an automatic run or implicit commit.

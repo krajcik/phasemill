@@ -15,10 +15,12 @@ Codex-native, and independent from personal configuration.
 - The MCP server owns validated config and state transitions. Codex owns tools,
   subagents, repository edits, approvals, and user-visible progress.
 - Hooks are advisory. A missing hook must not corrupt or block a durable run.
-- Automatic learning is proposal-only. It may read the current run, current
-  user feedback, and one explicitly named PR, but may not edit files; applying
-  an exact project `.codex/phasemill/` diff or explicitly requested user-global
-  `PLUGIN_DATA` diff requires separate approval.
+- Automatic learning may apply validated project rules under
+  `.codex/phasemill/rules/` and project Codex skills under `.codex/skills/`
+  without another approval. It remains bounded to the current run, current
+  user feedback, and one explicitly named PR, restores only its own invalid
+  diff after two repair attempts, and requires exact-diff approval for every
+  user-global change.
 - Never launch nested `codex exec` to emulate per-agent model selection. Native
   child agents inherit the root runtime until Codex exposes supported routing.
 - Pi review stays direct, read-only, fixed to `zai/glm-5.2` with `high`, and

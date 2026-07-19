@@ -17,9 +17,9 @@ marketplace, installs `phasemill@phasemill`, and exercises the installed copy.
 It executes an interrupted and resumed lazy journey through discovery, design,
 exclusive planning, findings/fix, exact run handoff, synthetic run completion,
 and terminal lazy completion. It verifies stable action replay, durable waiting,
-ignored runtime state, unchanged HEAD and branch, and no commit, push, project
-learning write, network request, or model call. The original planning and run
-smoke remains part of the same check.
+ignored runtime state, unchanged origin HEAD and branch, project-learning
+prompt and checkpoint contracts, and no push, global write, network request, or
+model call. The original planning and run smoke remains part of the same check.
 
 ## Manual signed-in check
 
@@ -38,21 +38,23 @@ Use a disposable repository with `/.phasemill/runs/` ignored:
    for approval and uses the exact path and branch reported by `worktree.sh`.
 4. Continue through native review, required Pi review, finalize, and learning.
    Confirm terminal `$status` reports one completed lazy journey and its linked
-   run, and that learning only displays a proposal.
+   run, and that qualifying project learning is applied by the linked `run`.
 5. Confirm native implementation and read-only review children inherit the root
    Codex runtime; configured per-role profiles should be reported only as
    routing hints.
 6. With Pi enabled, confirm the adapter reports elapsed time, turns, tool calls,
    last event, current tool, and partial output on timeout.
-7. Add a corrective user comment or name a test PR, then confirm the learning
-   action proposes an evidence-linked `.codex/phasemill/` diff without writing
-   it. Confirm `$learn` asks once for candidate selection and again for the
-   regenerated exact diff.
-8. Explicitly request a reusable language rule globally and confirm its
-   proposal targets the actual `${PLUGIN_DATA}/profiles/<language>.md`, while
-   an unset global root fails closed and project-specific guidance remains
-   under `.codex/phasemill/`.
-9. Confirm commit, push, release, deploy, and worktree mutations still require
+7. Add a corrective user comment or name a test PR. Confirm a compact invariant
+   is applied under `.codex/phasemill/rules/`, a reusable procedure creates
+   `.codex/skills/<name>/SKILL.md`, and a delegating rule links
+   `../../skills/<name>/SKILL.md`.
+8. Force validation to fail and confirm learning makes at most two repair
+   attempts, then restores only its own changed paths while the implementation
+   run remains successful.
+9. Explicitly request global learning and confirm Phasemill resolves the actual
+   `${PLUGIN_DATA}` or an exact global Codex skill root, shows a fresh exact
+   diff, and writes only after approval. An unavailable root must fail closed.
+10. Confirm commit, push, release, deploy, and worktree mutations still require
    separate explicit approval.
 
 Live model and network checks are intentionally separate from the offline suite

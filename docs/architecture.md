@@ -55,7 +55,7 @@ normal run. Restarting across that boundary reuses the matching run instead of
 starting a second one.
 
 Retries, review iterations, configured external review, finalization, and
-automatic learning proposals are config-driven. The engine never edits
+automatic project learning are config-driven. The engine never edits
 implementation or project-scope files and never treats ephemeral Codex
 `update_plan` state as durable truth.
 
@@ -64,20 +64,24 @@ bootstrap, and local mutation-stage checkpoints. Stable action trailers make a
 commit replay-safe across the commit-before-record crash window. Ambiguity,
 overlapping active work, permission changes, external mutations, and exhausted
 policy limits still pause the journey; push, release, publish, deploy, worktree
-cleanup, and learning writes retain their explicit gates.
+cleanup, and user-global learning retain their explicit gates. Linked lazy
+runs checkpoint validated project-learning paths through the existing
+replay-safe stage helper.
 
 The `learning` action runs in the root Codex task because it needs the user's
 current corrective comments. It may inspect only the current run and one
-explicitly named PR. Its result is recorded in the run progress log, but every
-project-scope change remains a separate `$learn` selection and exact-diff
-approval. Learning failure is advisory and cannot retroactively fail a
-validated implementation run.
+explicitly named PR. A compact invariant goes to
+`.codex/phasemill/rules/`; a reusable multi-step procedure goes to
+`.codex/skills/<name>/SKILL.md`. Project changes apply without another
+approval, are validated with at most two repair attempts, and restore only
+their own paths on failure. Learning remains advisory and cannot retroactively
+fail a validated implementation run.
 
-Project scope is the default learning destination. An explicit user request
-may route repository-independent conventions, language profiles, or complete
-review roles to the installed plugin's actual `PLUGIN_DATA` tree. The project
-layer retains higher precedence, and an unavailable global root is reported
-rather than guessed.
+An explicit user request may route repository-independent guidance to the
+installed plugin's actual `PLUGIN_DATA` tree or an exact global Codex skill
+root. Every global write requires approval of a fresh exact diff; unavailable
+roots are reported rather than guessed, and the project layer retains higher
+precedence.
 
 ## MCP boundary
 

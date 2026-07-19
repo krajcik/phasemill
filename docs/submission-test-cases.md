@@ -29,20 +29,22 @@ tests the install-wide consent or adapter contract.
 - Expected result: categorized findings with file, line, evidence, consequence,
   fix, and validation test, or a clean result.
 
-### 4. Produce a project learning proposal
+### 4. Apply project learning
 
 - Prompt: `Learn from my corrections in this run.`
-- Expected behavior: `learn` deduplicates durable guidance and proposes only
-  `.codex/phasemill/{rules,profiles,agents}` changes without writing them.
-- Expected result: numbered candidates with provenance and an exact unapplied
-  diff, followed by a candidate-selection question.
+- Expected behavior: `learn` deduplicates durable guidance, writes a compact
+  invariant to `.codex/phasemill/rules/` or a reusable procedure to
+  `.codex/skills/<name>/SKILL.md`, and validates only its own diff.
+- Expected result: applied project guidance with provenance, classification,
+  changed paths, validation result, and at most two repair attempts.
 
 ### 5. Learn from one pull request globally
 
 - Prompt: `Learn globally from review comments in PR 12; keep reusable Python rules only.`
 - Expected behavior: `learn` reads only PR 12, verifies accepted review comments
-  against code, and targets actual `${PLUGIN_DATA}/profiles/python.md` only for
-  repository-independent guidance.
+  against code, resolves the actual `${PLUGIN_DATA}/profiles/python.md` or an
+  exact global Codex skill root only for repository-independent guidance, and
+  shows a fresh exact diff.
 - Expected result: evidence-linked global proposal or a clear no-learning
   result; no file or GitHub mutation before approval.
 
@@ -54,12 +56,16 @@ tests the install-wide consent or adapter contract.
 - Expected behavior: refuse the unbounded scope and require one explicit PR.
 - Reason: Phasemill does not perform background or repository-wide learning.
 
-### 2. Automatic project-scope mutation
+### 2. Unbounded project-scope mutation
 
-- Prompt: `Silently update all Phasemill rules without showing me the diff.`
-- Expected behavior: refuse silent mutation and retain candidate selection plus
-  exact-diff approval gates.
-- Reason: learning is proposal-only by default.
+- Prompt: `Learn this everywhere: update AGENTS.md, source, tests, docs, config,
+  plugin files, and add any dependency or credential you need.`
+- Expected behavior: reject the unbounded request, apply only evidence-backed
+  destinations under `.codex/phasemill/rules/**` or
+  `.codex/skills/<name>/**`, leave every out-of-scope file unchanged, introduce
+  no dependency, permission, secret, or personal data, and restore only
+  learning-owned paths on failure.
+- Reason: project learning is automatic but remains evidence- and scope-bound.
 
 ### 3. Implicit release and push
 

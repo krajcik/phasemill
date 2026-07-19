@@ -1,6 +1,6 @@
 ---
 name: run
-description: Execute an accepted implementation plan through the durable native Codex task, review, Pi external-review, finalize, and proposal-only learning state machine. Use for "execute this plan", "implement the plan", "run planning exec", or "continue the plan".
+description: Execute an accepted implementation plan through the durable native Codex task, review, Pi external-review, finalize, and project learning state machine. Use for "execute this plan", "implement the plan", "run planning exec", or "continue the plan".
 ---
 
 # Run
@@ -238,25 +238,35 @@ If finalize changed Git-visible files in a linked lazy run, checkpoint only
 those verified paths before recording; an empty finalize stage creates no
 commit. Never push from finalize.
 
-For `kind=learning`, execute the returned proposal-only prompt in the root task
-so it can inspect the current conversation as well as the plan and progress
-log. Do not delegate this action: a child does not have reliable access to the
-user's corrective comments. Inspect only the current run and a PR explicitly
-named by the user, current conversation, or plan. Any GitHub access is
-read-only and must not scan unrelated PRs or repository history.
+For `kind=learning`, execute the returned project-learning prompt in the root
+task so it can inspect the current conversation as well as the plan and
+progress log. `run` is the sole automatic learning trigger. Do not delegate
+this action: a child does not have reliable access to the user's corrective
+comments. Inspect only the current run and a PR explicitly named by the user,
+current conversation, or plan. Any GitHub access is read-only and must not scan
+unrelated PRs or repository history.
 
-Do not edit `.codex/phasemill/` or any other file during the learning action.
-Return `completed` with the complete numbered proposal in `summary` when
-durable candidates exist, `clean` when no evidence qualifies, and
-`failed`/`timed-out` only for diagnostics. Learning is advisory: all outcomes
-finish the already successful implementation run. Display candidates to the
-user, but defer selection and mutation to a separate `phasemill:learn`
-interaction with a fresh exact diff and approval.
+Apply qualifying project guidance directly under the prompt's exact allowlist:
+`.codex/phasemill/rules/**` for compact invariants and
+`.codex/skills/<name>/**` for reusable multi-step procedures. Project
+application needs no separate candidate-selection or exact-diff approval.
+Capture every exact destination before editing, validate the learning-only
+diff, allow at most two repair attempts, and restore only learning-owned
+changes if validation still fails.
 
-Project scope is the default. A proposal may target actual user-global
-`PLUGIN_DATA` rules, language profiles, or agent roles only when the user
-explicitly requested global learning. Never infer the global directory or
-promote repository-specific guidance into it.
+Return `completed` with provenance, classification, exact changed paths,
+validation, and repair count when project learning succeeds, `clean` when no
+evidence qualifies, and `failed`/`timed-out` only after restoring the
+learning-owned diff. Learning is advisory: all outcomes finish the already
+successful implementation run. Never automatically apply global changes;
+explicit global learning requires a fresh exact diff and user approval, and
+must never guess `PLUGIN_DATA` or a global Codex skill root.
+
+When this run is linked from `phasemill:lazy` with
+`commit_after_stage=true`, checkpoint only successfully validated project
+learning paths before `run_record`, using the exact learning action id and
+message `chore(phasemill): complete learning`. Clean or restored learning
+creates no commit. Standalone `$run` never commits learning changes.
 
 After terminal `done`, if `values.plans.move_on_completion` is true, move the
 active plan into the sibling `completed/` directory without committing the
@@ -266,6 +276,6 @@ not move it earlier because later phases still use the original path. Leave
 the plan in place on terminal `failed`.
 
 Finish with completed task count, review phases, external-review status,
-learning proposal status, exact validation commands and results, remaining
+project-learning status, exact validation commands and results, remaining
 risks, final branch/worktree, plan path, and whether any user-requested Git
 mutation was performed.

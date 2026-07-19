@@ -26,7 +26,7 @@ outside and above plugin configuration.
 ```
 
 - `config.toml` overrides typed lazy preparation, execution, review, finalize,
-  proposal-only learning, worktree, profile, and future native-agent routing
+  project learning, worktree, profile, and future native-agent routing
   settings.
 - `prompts/<name>.md` replaces a complete embedded phase prompt.
 - `agents/<role>.md` replaces or adds a complete review-role prompt.
@@ -95,7 +95,9 @@ set it to `false` for an explicit in-place journey. `commit_after_stage = true`
 creates replay-safe local commits for config, plan, implementation, applied
 review fixes, finalize changes, and a Git-visible plan move. Empty stages do not
 commit. Lazy also resolves install-wide Pi consent on first use. It never pushes,
-publishes, deploys, removes the worktree, or applies a learning proposal.
+publishes, deploys, removes the worktree, or applies user-global learning.
+Validated project-learning paths are checkpointed by the linked run when this
+commit policy is enabled.
 
 ## Runtime profiles
 
@@ -139,7 +141,7 @@ and `required = false`. Normal user and project config retain higher precedence.
 
 ## Automatic learning
 
-Automatic proposal generation is enabled by default:
+Automatic project learning is enabled by default:
 
 ```toml
 [learning]
@@ -147,10 +149,16 @@ auto_propose = true
 ```
 
 Set it to `false` to finish immediately after finalize or review. Explicit
-`$learn` analysis of a named run or PR remains available. Automatic learning
-can propose changes only under `.codex/phasemill/{rules,profiles,agents}` and
-cannot write them; candidate selection and approval of the current combined
-diff are separate gates.
+`$learn` analysis of a named run or PR remains available. When enabled, the
+root `run` action may apply compact project invariants under
+`.codex/phasemill/rules/` and reusable multi-step procedures under
+`.codex/skills/<name>/SKILL.md` without another approval. A rule may invoke
+`$<name>` and link `../../skills/<name>/SKILL.md`.
+
+Learning validates its own diff, makes at most two repair attempts, and
+restores only paths changed by the learning action if validation still fails.
+The learning outcome remains advisory and cannot retroactively fail the
+validated implementation.
 
 On an explicit global-learning request, the same workflow may target the
 actual user plugin-data layer:
@@ -162,11 +170,11 @@ ${PLUGIN_DATA}/
 └── rules/
 ```
 
-Global candidates must be repository-independent. Reusable language and
-framework checks belong in `profiles/<language>.md`; repository architecture,
-domain contracts, local tooling, and team conventions remain under the project
-tree. Phasemill never invents a global path when `PLUGIN_DATA` is unavailable,
-and project fragments keep higher precedence.
+Global candidates must be repository-independent. Global Codex skills require
+an exact skill root already exposed by the current catalog or explicitly
+provided by the user. Phasemill never guesses `PLUGIN_DATA`, a global skill
+root, or `~/.codex/skills`; it shows a fresh exact diff and requires explicit
+approval before every global write. Project fragments keep higher precedence.
 
 ## State and worktrees
 

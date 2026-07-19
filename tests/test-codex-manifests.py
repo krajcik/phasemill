@@ -56,6 +56,13 @@ class CodexManifestTests(unittest.TestCase):
     def test_repository_manifests_are_valid(self) -> None:
         self.assertEqual([], self.errors())
 
+    def test_phasemill_v170_manifest_describes_self_improving_learning(self) -> None:
+        manifest = self.load_manifest("phasemill")
+        self.assertEqual("1.7.0", manifest["version"])
+        description = manifest["interface"]["longDescription"]
+        self.assertIn("self-improving project rules and skills", description)
+        self.assertIn("explicit global", description)
+
     def test_rejects_malformed_json(self) -> None:
         self.manifest_path("phasemill").write_text("{", encoding="utf-8")
         self.assert_error_contains("invalid JSON")

@@ -41,6 +41,11 @@ class CodexWorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.text = {name: path.read_text(encoding="utf-8") for name, path in SKILLS.items()}
         cls.normalized = {name: re.sub(r"\s+", " ", text) for name, text in cls.text.items()}
+        cls.learning_policy = re.sub(
+            r"\s+",
+            " ",
+            (PLUGIN / "defaults/prompts/learning.md").read_text(encoding="utf-8"),
+        )
 
     def test_manifest_exports_all_native_skills(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -62,21 +67,28 @@ class CodexWorkflowTests(unittest.TestCase):
         self.assertIn("Do not reset, revert, stash, delete, force-checkout, rewrite history", text)
         self.assertIn("Never treat \"start over\" as permission for destructive cleanup", text)
 
-    def test_learn_is_bounded_to_project_scope_and_two_confirmation_gates(self) -> None:
+    def test_learn_applies_project_scope_and_confirms_global_diff(self) -> None:
         text = self.normalized["learn"]
         self.assertIn("current or explicitly named Phasemill run", text)
         self.assertIn("one GitHub PR explicitly identified", text)
         self.assertIn("Do not inspect other PRs", text)
-        self.assertIn("comment from another developer qualifies only", text)
-        self.assertIn("`.codex/phasemill/rules/review.md`", text)
-        self.assertIn("only when, the user explicitly asks to save the learning globally", text.lower())
-        self.assertIn("`${PLUGIN_DATA}/profiles/<language>.md`", text)
-        self.assertIn("Do not guess a user-global directory", text)
-        self.assertIn("higher-precedence project fragment", text)
-        self.assertIn("ask which candidate numbers to apply", text.lower())
-        self.assertIn("Display that exact diff and ask for approval before writing", text)
-        self.assertIn("installed plugin cache", text)
+        self.assertIn("`../../defaults/prompts/learning.md`", text)
+        self.assertIn("do not restate or widen them locally", text)
         self.assertIn("Do not commit", text)
+        for phrase in (
+            "`.codex/phasemill/rules/",
+            "`.codex/skills/<kebab-case-name>/SKILL.md`",
+            "`../../skills/<skill-name>/SKILL.md`",
+            "at most two repair attempts",
+            "restore only the destinations changed by this learning action",
+            "Only when the user explicitly asks",
+            "actual non-empty `${PLUGIN_DATA}`",
+            "exact global Codex skill root",
+            "one fresh combined unified diff",
+            "explicit approval of that exact diff before writing",
+            "Never guess a global root",
+        ):
+            self.assertIn(phrase, self.learning_policy)
 
     def test_clipboard_skills_use_stdin_only_adapter(self) -> None:
         for name in ("txt-copy", "md-copy"):

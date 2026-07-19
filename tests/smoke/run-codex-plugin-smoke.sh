@@ -225,8 +225,14 @@ def assert_mutation_guards(installed: dict[str, Path]) -> None:
             "Approval to post a review does not authorize merging",
         ),
         root / "skills/learn/SKILL.md": (
-            "ask which candidate numbers to apply",
-            "ask for approval before writing",
+            "../../defaults/prompts/learning.md",
+            "do not restate or widen them locally",
+            "Do not commit without a separate request",
+        ),
+        root / "defaults/prompts/learning.md": (
+            ".codex/skills/<kebab-case-name>/SKILL.md",
+            "Codex skill root already exposed",
+            "explicit approval",
         ),
         root / "skills/lazy/SKILL.md": (
             "plan_write_mode=create-exclusive",
@@ -234,7 +240,9 @@ def assert_mutation_guards(installed: dict[str, Path]) -> None:
             "lazy-stage.py checkpoint",
             "never push",
             "never start a second run",
-            "never applies `.codex/phasemill/`",
+            "never creates a separate learning",
+            "`.codex/skills/**`",
+            "fresh exact diff and explicit user approval",
         ),
     }
     for path, phrases in checks.items():
@@ -322,13 +330,18 @@ def verify_planning_pipeline(installed: dict[str, Path], root: Path) -> None:
         input_text=json.dumps({"outcome": "clean", "summary": "critical review clean"}),
     )
     if learning.get("kind") != "learning" or learning.get("prompt_name") != "learning":
-        raise SmokeError(f"planning pipeline did not enter proposal-only learning: {learning}")
-    if ".codex/phasemill/" not in learning.get("prompt", ""):
-        raise SmokeError("learning action lost its project-scope allowlist")
-    if "${PLUGIN_DATA}/profiles/<language>.md" not in learning.get("prompt", ""):
-        raise SmokeError("learning action lost its explicit user-global language scope")
-    if "Only when the user explicitly asks" not in learning.get("prompt", ""):
-        raise SmokeError("learning action can promote global guidance without an explicit request")
+        raise SmokeError(f"planning pipeline did not enter project learning: {learning}")
+    learning_prompt = learning.get("prompt", "")
+    if ".codex/phasemill/rules/" not in learning_prompt:
+        raise SmokeError("learning action lost its project-rule allowlist")
+    if ".codex/skills/<kebab-case-name>/SKILL.md" not in learning_prompt:
+        raise SmokeError("learning action lost its project-skill allowlist")
+    if "Make at most" not in learning_prompt or "two repair attempts" not in learning_prompt:
+        raise SmokeError("learning action lost its bounded repair contract")
+    if "Never apply a global change automatically" not in learning_prompt:
+        raise SmokeError("learning action can apply global guidance automatically")
+    if "fresh combined unified diff" not in learning_prompt or "explicit approval" not in learning_prompt:
+        raise SmokeError("learning action lost its exact global approval gate")
     done = run_json(
         [*base, "record", plan, "--action-id", str(learning["action_id"])],
         input_text=json.dumps({"outcome": "clean", "summary": "no durable learning signals"}),
@@ -341,7 +354,7 @@ def verify_planning_pipeline(installed: dict[str, Path], root: Path) -> None:
         if path.is_file() and path.name != "config.toml"
     ]
     if unexpected_scope_writes:
-        raise SmokeError(f"proposal-only learning mutated project scope: {unexpected_scope_writes}")
+        raise SmokeError(f"controller mutated project learning scope: {unexpected_scope_writes}")
     state = run_json([*base, "show", plan]).get("state", {})
     if state.get("status") != "completed" or state.get("task_retry_count") != 0:
         raise SmokeError(f"durable completed state is invalid: {state}")
@@ -627,7 +640,9 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
         input_text=json.dumps({"outcome": "clean", "summary": "synthetic review clean"}),
     )
     if run_action.get("kind") != "learning":
-        raise SmokeError(f"synthetic run did not reach proposal-only learning: {run_action}")
+        raise SmokeError(f"synthetic run did not reach project learning: {run_action}")
+    if ".codex/skills/<kebab-case-name>/SKILL.md" not in run_action.get("prompt", ""):
+        raise SmokeError("synthetic learning lost its project-skill contract")
     run_action = run_json(
         [*run_base, "record", plan, "--action-id", str(run_action["action_id"])],
         input_text=json.dumps({"outcome": "clean", "summary": "no durable learning signal"}),
@@ -655,7 +670,7 @@ def verify_lazy_pipeline(installed: dict[str, Path], root: Path) -> None:
     config_dir = execution / ".codex/phasemill"
     unexpected_scope_writes = [path for path in config_dir.rglob("*") if path.is_file() and path.name != "config.toml"]
     if unexpected_scope_writes:
-        raise SmokeError(f"lazy proposal-only learning mutated project scope: {unexpected_scope_writes}")
+        raise SmokeError(f"lazy controller mutated project learning scope: {unexpected_scope_writes}")
     if ".phasemill/runs" in git(execution, "status", "--porcelain=v1", "--untracked-files=all"):
         raise SmokeError("lazy runtime state polluted Git status")
     if git(fixture, "rev-parse", "HEAD") != head_before:
@@ -770,7 +785,7 @@ def main(argv: list[str]) -> int:
             "lazy_pipeline": "passed",
             "retry_resume": "passed",
             "review_fanout_contract": "passed",
-            "proposal_only_learning": "passed",
+            "project_learning": "passed",
             "worktree_isolation": "passed",
             "external_mutations": "none",
             "model_or_network_calls": "none",

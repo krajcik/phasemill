@@ -73,6 +73,10 @@ class CodexSkillEvalTests(unittest.TestCase):
         self.assertIn("minimal relevant set", context)
         self.assertIn("SKILL.md", context)
         self.assertIn("Do not delegate", context)
+        self.assertIn("`run` owns automatic learning", context)
+        self.assertIn("Do not select `phasemill:learn` merely because", context)
+        self.assertIn("only when the user explicitly asks", context)
+        self.assertIn("never start background learning", context)
         self.assertNotIn(secret_prompt, result.stdout)
         self.assertNotIn("super-secret-value", result.stdout)
 

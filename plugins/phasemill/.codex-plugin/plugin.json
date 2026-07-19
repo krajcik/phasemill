@@ -1,6 +1,6 @@
 {
   "name": "phasemill",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "A durable Codex workflow for autonomous planning, implementation, review, project learning, and release.",
   "author": {
     "name": "Krajcik",
@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Phasemill",
     "shortDescription": "Run focused or autonomous durable engineering workflows",
-    "longDescription": "Phasemill guides Codex through repository-grounded design, planning, implementation, native subagent review, independent Pi review, proposal-only project learning, and release using a restart-safe state machine. Its lazy mode can carry an idea through the complete workflow while preserving every explicit safety gate.",
+    "longDescription": "Phasemill guides Codex through repository-grounded design, planning, implementation, native subagent review, independent Pi review, self-improving project rules and skills, and release using a restart-safe state machine. Its lazy mode can carry an idea through the complete workflow while preserving explicit global and external mutation gates.",
     "developerName": "Krajcik",
     "category": "Developer Tools",
     "capabilities": [

@@ -119,17 +119,20 @@ class CodexPlanningSkillTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
-    def test_learning_is_root_only_proposal_and_never_blocks_success(self) -> None:
+    def test_learning_is_root_owned_project_application_and_never_blocks_success(self) -> None:
         text = self.normalized["run"]
         for phrase in (
             "Do not delegate this action",
             "current conversation",
-            "Do not edit `.codex/phasemill/`",
-            "separate `phasemill:learn` interaction",
+            "`run` is the sole automatic learning trigger",
+            "`.codex/phasemill/rules/**`",
+            "`.codex/skills/<name>/**`",
+            "needs no separate candidate-selection or exact-diff approval",
+            "at most two repair attempts",
+            "restore only learning-owned changes",
             "Learning is advisory",
-            "Project scope is the default",
-            "only when the user explicitly requested global learning",
-            "Never infer the global directory",
+            "fresh exact diff and user approval",
+            "must never guess `PLUGIN_DATA` or a global Codex skill root",
         ):
             self.assertIn(phrase, text)
 
@@ -169,8 +172,10 @@ class CodexPlanningSkillTests(unittest.TestCase):
             "run_next",
             "never start a second run",
             "unrelated active run must not be linked",
-            "proposal-only learning",
-            "phasemill:learn",
+            "project learning transitions",
+            "never creates a separate learning action",
+            "`.codex/skills/**`",
+            "fresh exact diff and explicit user approval",
         ):
             self.assertIn(phrase, text)
 
@@ -185,8 +190,8 @@ class CodexPlanningSkillTests(unittest.TestCase):
             "exhausted task or plan-review retries",
             "amend, rebase, push",
             "release, publish, deploy",
-            "applying any learning proposal",
-            "outside `$lazy`",
+            "applying any user-global learning diff",
+            "application of global learning remain outside `$lazy`",
             "Do not run raw `git worktree add`",
             "never push",
             "Phasemill-Action: <action-id>",

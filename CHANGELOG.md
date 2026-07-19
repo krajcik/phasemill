@@ -1,6 +1,27 @@
 # Changelog
 
-## Unreleased
+## Phasemill v1.7.0 - 2026-07-19
+
+### New features
+
+- let automatic and explicit learning apply evidence-backed project rules under
+  `.codex/phasemill/rules/` and reusable project Codex skills under
+  `.codex/skills/` without another approval
+- allow project rules to invoke and link learned project skills while keeping
+  `run` as the sole automatic learning trigger
+
+### Safety
+
+- validate the learning-only diff, allow at most two repair attempts, and
+  restore only learning-owned paths when validation still fails
+- keep every user-global change behind approval of a fresh exact diff and never
+  guess `PLUGIN_DATA` or a global Codex skill root
+
+### Compatibility
+
+- retain `learning.auto_propose` as the enable switch; `false` still skips
+  automatic learning, while enabled learning now applies validated project
+  guidance
 
 ## Phasemill v1.6.0 - 2026-07-19
 
