@@ -94,8 +94,8 @@ enabled = false
 auto_propose = true
 
 [lazy]
-max_plan_review_iterations = 2
-plan_review_agents = ["implementation", "quality", "testing"]
+max_plan_review_iterations = 7
+plan_review_agents = ["implementation", "quality"]
 worktree = true
 commit_after_stage = true
 

@@ -179,8 +179,8 @@ class LazyControllerTests(unittest.TestCase):
         self.assertTrue(created)
         self.assertEqual("discovery", action.kind)
         review = self.to_review(controller, action)
-        self.assertEqual(3, len(review.roles))
-        self.assertEqual(3, review.max_parallel_agents)
+        self.assertEqual(("implementation", "quality"), tuple(role.name for role in review.roles))
+        self.assertEqual(2, review.max_parallel_agents)
         self.assertIn("Prompt source:", review.prompt)
         plan_prompt = controller.config.prompts["make-plan"].content
         state = controller.store.load()
@@ -436,38 +436,37 @@ class LazyControllerTests(unittest.TestCase):
         self.assertTrue(handoff.run_requirements["lazy"]["commit_after_stage"])
         self.assertEqual(controller.store.journey_id, handoff.run_requirements["lazy"]["journey_id"])
 
-    def test_two_review_attempts_then_convergence_failure(self) -> None:
+    def test_seven_review_attempts_then_convergence_failure(self) -> None:
         controller, action, _ = self.start()
         review = self.to_review(controller, action)
-        fix = self.record(
-            controller,
-            review,
-            outcome="findings",
-            findings=[self.finding(1)],
-        )
-        self.assertEqual("plan-fix", fix.kind)
-        previous = fix.plan_digest
-        content = (self.root / fix.plan_path).read_text(encoding="utf-8") + "\nFix 1.\n"
-        digest = self.write_plan(fix, content, exclusive=False)
-        review = self.record(
-            controller,
-            fix,
-            outcome="completed",
-            plan_path=fix.plan_path,
-            previous_plan_digest=previous,
-            plan_digest=digest,
-        )
-        self.assertEqual(2, review.iteration)
-        failed = self.record(
-            controller,
-            review,
-            outcome="findings",
-            findings=[self.finding(2)],
-        )
+        for iteration in range(1, 7):
+            self.assertEqual(iteration, review.iteration)
+            fix = self.record(
+                controller,
+                review,
+                outcome="findings",
+                findings=[self.finding(iteration)],
+            )
+            self.assertEqual("plan-fix", fix.kind)
+            previous = fix.plan_digest
+            content = (self.root / fix.plan_path).read_text(encoding="utf-8")
+            digest = self.write_plan(fix, content + f"\nFix {iteration}.\n", exclusive=False)
+            review = self.record(
+                controller,
+                fix,
+                outcome="completed",
+                plan_path=fix.plan_path,
+                previous_plan_digest=previous,
+                plan_digest=digest,
+            )
+
+        self.assertEqual(7, review.iteration)
+        final_finding = self.finding(7)
+        failed = self.record(controller, review, outcome="findings", findings=[final_finding])
         self.assertEqual("failed", failed.kind)
         self.assertIn("did not converge", failed.reason)
         terminal = controller.store.load()
-        self.assertEqual((self.finding(2),), terminal.findings)
+        self.assertEqual((final_finding,), terminal.findings)
         self.assertEqual("failed", terminal.status)
 
     def test_waiting_input_is_stable_and_answer_resumes_exact_phase(self) -> None:

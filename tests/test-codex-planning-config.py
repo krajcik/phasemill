@@ -332,14 +332,14 @@ class PlanningConfigTests(unittest.TestCase):
 
     def test_lazy_defaults_and_effective_sources_are_reported(self) -> None:
         config = self.load()
-        self.assertEqual(2, config.values["lazy"]["max_plan_review_iterations"])
+        self.assertEqual(7, config.values["lazy"]["max_plan_review_iterations"])
         self.assertEqual(
-            ("implementation", "quality", "testing"),
+            ("implementation", "quality"),
             config.lazy_plan_review_agents,
         )
         payload = CONFIG.show_payload(config)
         self.assertEqual(
-            ["implementation", "quality", "testing"],
+            ["implementation", "quality"],
             payload["lazy_plan_review_agents"],
         )
         self.assertTrue(config.origins["lazy.max_plan_review_iterations"].startswith("embedded:"))

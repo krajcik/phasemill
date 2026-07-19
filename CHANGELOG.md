@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- focus lazy plan review on implementation and quality reviewers by default
+  while retaining testing review after implementation
+- raise the default lazy plan-review convergence limit from 2 to 7 iterations
+
 ## Phasemill v1.5.0 - 2026-07-19
 
 ### Changed
